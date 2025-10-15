@@ -89,3 +89,14 @@ class Transaction(Base):
     cached_at = Column(DateTime, default=dt.datetime.utcnow, nullable=False, index=True)
 
     account = relationship("Account", back_populates="transactions")
+
+
+class ManualData(Base):
+    __tablename__ = "manual_data"
+
+    account_id: str = Column(String, ForeignKey("accounts.id"), primary_key=True)
+    rent_roll: Optional[Decimal] = Column(Numeric(18, 2))
+    updated_at = Column(DateTime, nullable=False, index=True)
+    updated_by: Optional[str] = Column(String)
+
+    account = relationship("Account")
