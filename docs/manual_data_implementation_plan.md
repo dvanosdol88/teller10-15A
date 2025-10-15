@@ -1,8 +1,10 @@
-# Manual Data Implementation Plan - Cost-Optimized v1
+# Manual Data Implementation Plan - Cost-Optimized v1.1
 
 ## Overview
 
-This document defines the implementation plan for adding manual data persistence to the Teller Cached Dashboard, incorporating approved cost-saving measures to minimize complexity while delivering core functionality for a 2-user LLC scenario.
+This document defines the implementation plan for adding manual data persistence to the Teller Cached Dashboard, incorporating approved cost-saving measures and backend consistency patterns to minimize complexity while delivering core functionality for a 2-user LLC scenario.
+
+**Updated 2025-10-15:** Revised to align with existing backend authentication patterns and ensure consistent API semantics.
 
 ## Project Context
 
@@ -52,18 +54,22 @@ Add ability to manually enter and persist `rent_roll` values per account with mi
 **Backend (teller10-15A):**
 - Migration to create `manual_data` table
 - Repository layer: `upsert_manual_data(account_id, rent_roll)`, `get_manual_data(account_id)`
-- Resource: `ManualDataResource` at `/api/db/accounts/{id}/manual-data`
-  - `GET`: Return `{rent_roll: Decimal|null, updated_at: ISO8601|null}`
+- Resource: `ManualDataResource` (extends `BaseResource`) at `/api/db/accounts/{id}/manual-data`
+  - `GET`: Return `{account_id, rent_roll, updated_at}` (always 200, nulls when no record)
   - `PUT`: Accept `{rent_roll: number|null}`, validate, upsert, return updated record
-- Validation: rent_roll must be numeric or null, no negative values
-- No authentication required (2-user trusted scenario)
+- Validation: rent_roll must be numeric or null, >= 0, rounded to 2 decimals
+- Authentication: **Required** - uses existing `BaseResource.authenticate()` and Bearer token pattern
+- Ownership check: Verify `account.user_id == authenticated_user.id` (404 if not owned)
+- Feature flag: Add `FEATURE_MANUAL_DATA` to `/api/config` for UI toggle
 
 **Frontend (teller-codex10-9-devinUI):**
+- Feature flag: Check `FEATURE_MANUAL_DATA` from `/api/config` (hide UI if false)
 - Update card back: toggle between "Transactions" and "Manual Data" views
 - Manual Data view: displays current rent_roll value with "Edit" button
-- Edit modal: simple form with single number input for rent_roll
-- Save flow: PUT → show spinner → re-fetch → close modal → update display
+- Edit modal: simple form with `<input type="number" step="0.01" min="0">` for rent_roll
+- Save flow: PUT with Bearer token → show spinner → re-fetch → close modal → update display
 - Display "Last updated: X ago" timestamp when rent_roll exists
+- Error handling: Show toast on 400/404/5xx, keep modal open for retry
 
 **User Stories:**
 - **P1**: As a user, I can view the current rent_roll value for an account
@@ -78,10 +84,9 @@ Add ability to manually enter and persist `rent_roll` values per account with mi
 - Concurrent edit protection (ETag/optimistic locking)
 - Autosave or draft state
 - Delete endpoint (only PUT with null)
-- Multi-currency or timezone handling
+- Multi-currency handling (USD only)
 - Dynamic form schema engine
-- User authentication/authorization
-- Audit trail beyond single timestamp
+- Advanced audit trail (basic timestamp + updated_by included)
 
 ### Deferred to Phase 2
 
@@ -101,7 +106,7 @@ Add ability to manually enter and persist `rent_roll` values per account with mi
 CREATE TABLE manual_data (
     account_id VARCHAR NOT NULL PRIMARY KEY,
     rent_roll NUMERIC(18, 2) NULL,
-    updated_at TIMESTAMP NOT NULL,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_by VARCHAR NULL,
     FOREIGN KEY (account_id) REFERENCES accounts(id) ON DELETE CASCADE
 );
@@ -109,11 +114,18 @@ CREATE TABLE manual_data (
 CREATE INDEX ix_manual_data_updated_at ON manual_data(updated_at);
 ```
 
+**Key decisions:**
+- `TIMESTAMPTZ` with `DEFAULT now()` ensures automatic timestamp on insert and avoids timezone ambiguity
+- `updated_at` must be explicitly set in application code on updates
+- `ON DELETE CASCADE` ensures cleanup when accounts are removed
+
 ### API Contract
 
 **Endpoint:** `/api/db/accounts/{account_id}/manual-data`
 
-**GET Response (200):**
+**Authentication:** Requires `Authorization: Bearer <access_token>` header (same as other `/api/db/*` endpoints)
+
+**GET Response (200)** - Record exists:
 ```json
 {
   "account_id": "acc_abc123",
@@ -122,7 +134,7 @@ CREATE INDEX ix_manual_data_updated_at ON manual_data(updated_at);
 }
 ```
 
-**GET Response (404):** No manual data exists for account
+**GET Response (200)** - No record yet (nulls):
 ```json
 {
   "account_id": "acc_abc123",
@@ -130,6 +142,8 @@ CREATE INDEX ix_manual_data_updated_at ON manual_data(updated_at);
   "updated_at": null
 }
 ```
+
+**GET Response (404)** - Account not found or not owned by authenticated user
 
 **PUT Request:**
 ```json
@@ -153,12 +167,18 @@ Or to clear:
 }
 ```
 
-**PUT Error (400):**
+**PUT Error (400)** - Validation failure:
 ```json
 {
-  "error": "rent_roll must be a non-negative number or null"
+  "title": "Invalid request",
+  "description": "rent_roll must be a non-negative number or null"
 }
 ```
+
+**PUT Error (404)** - Account not found or not owned
+
+**Headers (all responses):**
+- `Cache-Control: no-store` (consistent with other API endpoints)
 
 ### Frontend UI Flow
 
@@ -199,33 +219,120 @@ Rent Roll: [    2500.00    ]  (number input)
 
 **Repository Layer (python/repository.py or similar):**
 ```python
-def get_manual_data(session, account_id: str) -> dict:
-    """Fetch manual data for account, return dict with null defaults if not found"""
+from decimal import Decimal
+from datetime import datetime, timezone
+
+def get_manual_data(self, account_id: str) -> dict:
+    """Fetch manual data for account, return dict with null defaults if not found.
     
-def upsert_manual_data(session, account_id: str, rent_roll: Decimal | None) -> dict:
-    """Insert or update manual data, return updated record"""
+    Returns:
+        {account_id, rent_roll, updated_at} - rent_roll/updated_at are None if no record
+    """
+    record = session.query(ManualData).filter_by(account_id=account_id).first()
+    if not record:
+        return {"account_id": account_id, "rent_roll": None, "updated_at": None}
+    return {
+        "account_id": record.account_id,
+        "rent_roll": record.rent_roll,
+        "updated_at": record.updated_at
+    }
+    
+def upsert_manual_data(self, account_id: str, rent_roll: Decimal | None) -> dict:
+    """Insert or update manual data, return updated record.
+    
+    Validates and rounds rent_roll to 2 decimals. Sets updated_at to UTC now().
+    """
+    if rent_roll is not None:
+        rent_roll = Decimal(str(rent_roll)).quantize(Decimal("0.01"))
+        if rent_roll < 0:
+            raise ValueError("rent_roll must be non-negative")
+    
+    record = session.query(ManualData).filter_by(account_id=account_id).first()
+    if record:
+        record.rent_roll = rent_roll
+        record.updated_at = datetime.now(timezone.utc)
+    else:
+        record = ManualData(
+            account_id=account_id,
+            rent_roll=rent_roll,
+            updated_at=datetime.now(timezone.utc)
+        )
+        session.add(record)
+    session.flush()
+    
+    return {
+        "account_id": record.account_id,
+        "rent_roll": record.rent_roll,
+        "updated_at": record.updated_at
+    }
 ```
 
 **Resource (python/resources.py):**
 ```python
-class ManualDataResource:
-    def on_get(self, req, resp, account_id):
-        # Fetch from repo, return JSON
+class ManualDataResource(BaseResource):
+    """Handles manual data for accounts (rent_roll, etc.)."""
+    
+    def on_get(self, req: Request, resp: Response, account_id: str) -> None:
+        with self.session_scope() as session:
+            repo = Repository(session)
+            user = self.authenticate(req, repo)  # Bearer token required
+            
+            account = repo.get_account(account_id)
+            if not account or account.user_id != user.id:
+                raise falcon.HTTPNotFound()
+            
+            manual_data = repo.get_manual_data(account_id)
+            resp.media = ensure_json_serializable(manual_data)
+            LOGGER.info("db.manual_data.get %s", {"user_id": user.id, "account_id": account_id})
         
-    def on_put(self, req, resp, account_id):
-        # Validate payload
-        # Call repo upsert
-        # Return updated JSON
+        self.set_no_cache(resp)
+    
+    def on_put(self, req: Request, resp: Response, account_id: str) -> None:
+        body = req.media or {}
+        rent_roll = body.get("rent_roll")
+        
+        # Validate rent_roll
+        if rent_roll is not None:
+            try:
+                rent_roll = Decimal(str(rent_roll))
+                if rent_roll < 0:
+                    raise ValueError("negative value")
+            except (ValueError, DecimalException):
+                raise falcon.HTTPBadRequest(
+                    "invalid-rent-roll",
+                    "rent_roll must be a non-negative number or null"
+                )
+        
+        with self.session_scope() as session:
+            repo = Repository(session)
+            user = self.authenticate(req, repo)
+            
+            account = repo.get_account(account_id)
+            if not account or account.user_id != user.id:
+                raise falcon.HTTPNotFound()
+            
+            manual_data = repo.upsert_manual_data(account_id, rent_roll)
+            resp.media = ensure_json_serializable(manual_data)
+            LOGGER.info(
+                "db.manual_data.put %s", 
+                {"user_id": user.id, "account_id": account_id, "rent_roll": rent_roll}
+            )
+        
+        self.set_no_cache(resp)
 ```
 
-**Validation:**
-- rent_roll must be: numeric (Decimal) or None
-- If numeric: >= 0 (no negative rents)
-- Round to 2 decimal places
+**Key Implementation Points:**
+- Extends `BaseResource` to inherit `authenticate()` and `session_scope()`
+- Uses existing `ensure_json_serializable()` helper for Decimal → float conversion
+- Follows same ownership check pattern as `CachedBalanceResource` and `CachedTransactionsResource`
+- Always returns 200 with nulls for missing data (not 404)
+- Sets `Cache-Control: no-store` like all other API endpoints
+- Validates and rounds to 2 decimals using `Decimal.quantize()`
+- Explicitly sets `updated_at` to UTC on every update
 
 **Migration (Alembic):**
-- Create `manual_data` table
-- Add foreign key constraint with CASCADE delete
+- Create `manual_data` table with `TIMESTAMPTZ` and `DEFAULT now()`
+- Add foreign key constraint with `ON DELETE CASCADE`
 - Add index on `updated_at`
 
 ### Frontend Implementation Details
@@ -234,26 +341,74 @@ class ManualDataResource:
 ```javascript
 async fetchManualData(accountId) {
   // GET /api/db/accounts/{accountId}/manual-data
-  // Return {rent_roll, updated_at} or fallback to {rent_roll: null, updated_at: null}
+  // Headers: Authorization: Bearer ${token}
+  // Return {account_id, rent_roll, updated_at}
+  // Fallback to {account_id, rent_roll: null, updated_at: null} on error
 }
 
 async saveManualData(accountId, rentRoll) {
   // PUT /api/db/accounts/{accountId}/manual-data
+  // Headers: Authorization: Bearer ${token}
   // Body: {rent_roll: rentRoll}
-  // Return updated record
+  // Return updated record or throw on error
 }
 ```
 
+**Authentication:**
+- Use existing Bearer token from localStorage (same as balances/transactions fetches)
+- No new auth mechanism required
+
 **UI Components:**
+- Feature flag check: Only show "Manual Data" toggle if `FEATURE_MANUAL_DATA === true`
 - Toggle buttons on card back
 - Manual data display panel
-- Edit modal with form
+- Edit modal with form (`<input type="number" step="0.01" min="0">`)
 - Timestamp formatter ("X ago" using simple time diff)
 
 **State Management:**
 - Keep manual data in memory per account
 - Refetch on card flip to manual data view
 - No localStorage caching (always fetch from server)
+- Handle 401 same as other endpoints (prompt to reconnect)
+
+## Backend Consistency Alignment
+
+The following design decisions ensure this feature aligns with existing backend patterns in `teller10-15A`:
+
+### Must-Have Consistency Items
+
+1. **Status Code Semantics (200 vs 404)**
+   - **Decision:** Always return `200` with nulls when no manual_data record exists
+   - **Rationale:** Simplifies UI logic; "no record yet" is a valid state, not an error
+   - **Pattern:** Return `{account_id, rent_roll: null, updated_at: null}`
+
+2. **Authentication Required**
+   - **Decision:** Require Bearer token and enforce ownership check
+   - **Rationale:** Maintains API consistency; `BaseResource.authenticate()` already exists
+   - **Pattern:** Same as `CachedBalanceResource` and `CachedTransactionsResource`
+   - **Benefit:** Makes `updated_by` field usable for future audit features
+
+3. **Timestamp Handling**
+   - **Decision:** Use `TIMESTAMPTZ NOT NULL DEFAULT now()` in schema
+   - **Rationale:** Avoids local-time ambiguity; ensures automatic insert timestamp
+   - **Pattern:** Explicitly set `updated_at = datetime.now(timezone.utc)` on updates
+
+### High-Value Additions
+
+4. **Feature Flag**
+   - **Decision:** Add `FEATURE_MANUAL_DATA` to `/api/config` response
+   - **Rationale:** Enables instant UI toggle without redeployment
+   - **Pattern:** Mirrors existing feature flag architecture
+
+5. **Decimal Serialization**
+   - **Decision:** Use existing `ensure_json_serializable()` helper
+   - **Rationale:** Consistent with all other endpoints; handles Decimal → float conversion
+   - **Pattern:** Already used in `CachedBalanceResource`, `LiveBalanceResource`, etc.
+
+6. **Upsert Pattern**
+   - **Decision:** One row per account (`account_id` as PK) with `ON DELETE CASCADE`
+   - **Rationale:** Simple, performant, automatic cleanup when accounts removed
+   - **Pattern:** Similar to `balances` table structure
 
 ## Implementation Phases
 
@@ -269,11 +424,16 @@ async saveManualData(accountId, rentRoll) {
 
 **Acceptance:**
 - Migration runs cleanly on SQLite and PostgreSQL
-- GET returns null defaults for new accounts
-- PUT creates/updates records
-- PUT with null clears rent_roll
-- Validation rejects negative numbers
-- Tests pass
+- Schema uses `TIMESTAMPTZ NOT NULL DEFAULT now()`
+- Repository: `get_manual_data()` returns nulls when no record (not exception)
+- Repository: `upsert_manual_data()` creates/updates, sets `updated_at` to UTC
+- Repository: PUT with null clears rent_roll
+- Repository: Validation rejects negative numbers, rounds to 2 decimals
+- Resource: GET returns 200 with nulls for missing record (not 404)
+- Resource: GET/PUT require Bearer token and enforce ownership (404 if not owned)
+- Resource: Uses `ensure_json_serializable()` for response
+- Resource: Sets `Cache-Control: no-store`
+- Tests pass for all scenarios
 
 ### Phase 2: Frontend UI (Read-Only Display)
 
@@ -286,11 +446,13 @@ async saveManualData(accountId, rentRoll) {
 6. Test with mock data
 
 **Acceptance:**
+- Feature flag: Manual Data toggle only visible if `FEATURE_MANUAL_DATA === true`
 - Toggle switches between Transactions and Manual Data
 - Manual data panel shows rent_roll or "No data"
-- Timestamp displays correctly
+- Timestamp displays correctly ("X ago")
 - Loading spinner shows while fetching
-- Graceful fallback on errors
+- Bearer token included in fetch request headers
+- Graceful fallback on errors (401 prompts reconnect)
 
 ### Phase 3: Frontend Edit Modal
 
@@ -304,11 +466,15 @@ async saveManualData(accountId, rentRoll) {
 
 **Acceptance:**
 - Modal opens on "Edit" click
-- Form validates numeric input
-- Save updates backend and UI
-- Clear sets to null
-- Cancel discards changes
-- Errors show toast, keep modal open
+- Form uses `<input type="number" step="0.01" min="0">`
+- Client-side validation: non-negative numbers only
+- Save sends PUT with Bearer token
+- Save spinner disables form during request
+- Clear button sends `{rent_roll: null}`
+- Cancel discards changes without saving
+- 400 errors show toast with validation message, keep modal open
+- 401 errors prompt to reconnect
+- Success closes modal and refreshes display
 
 ### Phase 4: Integration Testing & Polish
 
@@ -396,6 +562,49 @@ async saveManualData(accountId, rentRoll) {
 - Clear rollback path documented
 - Simple enough for future extension
 
+## Testing Checklist (Minimal but Complete)
+
+### Repository Layer Tests
+- ✅ `get_manual_data()` returns nulls for non-existent account_id
+- ✅ `get_manual_data()` returns correct data for existing record
+- ✅ `upsert_manual_data()` creates new record with valid rent_roll
+- ✅ `upsert_manual_data()` updates existing record
+- ✅ `upsert_manual_data()` rounds to 2 decimals (e.g., 2500.999 → 2501.00)
+- ✅ `upsert_manual_data()` rejects negative rent_roll
+- ✅ `upsert_manual_data()` accepts null to clear
+- ✅ `updated_at` set to UTC on create and update
+
+### Resource Layer Tests
+- ✅ GET returns 200 with nulls when no record exists
+- ✅ GET returns 200 with data when record exists
+- ✅ GET returns 404 when account doesn't exist
+- ✅ GET returns 404 when account not owned by authenticated user
+- ✅ GET returns 401 when no Bearer token provided
+- ✅ PUT creates/updates record successfully
+- ✅ PUT returns 400 for negative rent_roll
+- ✅ PUT returns 400 for invalid (non-numeric) rent_roll
+- ✅ PUT returns 404 for non-existent account
+- ✅ PUT returns 404 when account not owned
+- ✅ PUT returns 401 when no Bearer token
+- ✅ PUT accepts null to clear rent_roll
+- ✅ All responses include `Cache-Control: no-store`
+- ✅ Response uses `ensure_json_serializable()` (Decimal → float)
+
+### UI Tests (Manual)
+- ✅ Manual Data toggle hidden when `FEATURE_MANUAL_DATA === false`
+- ✅ Manual Data toggle visible when `FEATURE_MANUAL_DATA === true`
+- ✅ Fetch includes Bearer token in Authorization header
+- ✅ Display shows "No data" when rent_roll is null
+- ✅ Display shows formatted currency when rent_roll exists
+- ✅ Timestamp shows "X ago" correctly
+- ✅ Edit modal opens with current value pre-filled
+- ✅ Save button disabled during save (spinner shown)
+- ✅ Clear button sends null successfully
+- ✅ Cancel button closes modal without saving
+- ✅ 400 error shows toast, keeps modal open
+- ✅ 401 error prompts to reconnect
+- ✅ Success refreshes display and closes modal
+
 ## Future Enhancements (Post-Phase 1)
 
 **Phase 2 Candidates:**
@@ -437,7 +646,28 @@ async saveManualData(accountId, rentRoll) {
 
 ---
 
-**Version:** 1.0.0  
+**Version:** 1.1.0  
 **Created:** 2025-10-15  
+**Updated:** 2025-10-15 (Backend consistency alignment)  
 **Author:** David Van Osdol (@dvanosdol88)  
 **Devin Session:** https://app.devin.ai/sessions/166f3d0bf2f641e9b934b186a9454859
+
+## Changelog
+
+### v1.1.0 (2025-10-15)
+**Backend Consistency Fixes:**
+- Changed GET semantics: Always return 200 with nulls (not 404) for missing records
+- Added authentication requirement: Bearer token + ownership check (aligns with existing resources)
+- Updated schema: `TIMESTAMPTZ NOT NULL DEFAULT now()` instead of `TIMESTAMP`
+- Added explicit `updated_at` setting to UTC in repository upsert logic
+- Specified use of `ensure_json_serializable()` helper for Decimal conversion
+- Added `FEATURE_MANUAL_DATA` to `/api/config` for UI toggle
+- Enhanced testing checklist with auth/ownership/validation scenarios
+- Documented detailed implementation code patterns matching existing backend
+
+**Rationale:** Maintain consistency with existing `BaseResource`, `CachedBalanceResource`, and `CachedTransactionsResource` patterns to avoid future surprises and technical debt.
+
+### v1.0.0 (2025-10-15)
+- Initial plan with 12 approved cost-saving simplifications
+- Rent_roll only, modal editor, no optimistic updates, last-write-wins
+- ~60% complexity reduction vs original scope
