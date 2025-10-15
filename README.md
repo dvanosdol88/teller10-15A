@@ -1,4 +1,12 @@
-# Teller Cached Dashboard
+# LLC Teller Dashboard
+
+# This repo, teller10-15A, and teller10-15B we seeded by teller-codex10-9A <<< has been arcived to keep it safe.
+
+## teller-codex10-9A was working, fetching account balances and transactions, and data persisted if user disconnected teller, closed the browser, did a refresh, hard reset, etc.  Hosted on Render: https://teller-codex10-9a.onrender.com with a PostgreSQL instance: dpg-d3n27v8dl3ps73foailg-a
+
+## teller10-15A and B were created to start incorporating (1) better UI/UX (2) manual persistent storage of non bank-account fields.  Previously this 'broke' the app, so we can always return to the archived version.
+
+### Attempt1:  Giving Devin.ai access to teller10-15A and teller-codex10-9-devinUI, which Devin previously worked on significantly to align the two in preparation.
 
 This example implements a single Falcon service that serves both the Teller Connect UI and the API required to cache account data. The UI renders a flip-card for every connected account – balances on the front, the 10 most recent cached transactions on the back – and allows the user to refresh live Teller data on demand.
 
