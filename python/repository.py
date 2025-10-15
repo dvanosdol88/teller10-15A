@@ -144,6 +144,51 @@ class Repository:
         )
         return list(self.session.scalars(stmt))
 
+    # ---------------- Manual Data ---------------- #
+    def get_manual_data(self, account_id: str) -> dict:
+        """Fetch manual data for account, return dict with null defaults if not found.
+        
+        Returns:
+            {account_id, rent_roll, updated_at} - rent_roll/updated_at are None if no record
+        """
+        record = self.session.get(models.ManualData, account_id)
+        if not record:
+            return {"account_id": account_id, "rent_roll": None, "updated_at": None}
+        return {
+            "account_id": record.account_id,
+            "rent_roll": record.rent_roll,
+            "updated_at": record.updated_at,
+        }
+    
+    def upsert_manual_data(self, account_id: str, rent_roll: Optional[Decimal]) -> dict:
+        """Insert or update manual data, return updated record.
+        
+        Validates and rounds rent_roll to 2 decimals. Sets updated_at to UTC now().
+        """
+        if rent_roll is not None:
+            rent_roll = Decimal(str(rent_roll)).quantize(Decimal("0.01"))
+            if rent_roll < 0:
+                raise ValueError("rent_roll must be non-negative")
+        
+        record = self.session.get(models.ManualData, account_id)
+        if record:
+            record.rent_roll = rent_roll
+            record.updated_at = dt.datetime.now(dt.timezone.utc)
+        else:
+            record = models.ManualData(
+                account_id=account_id,
+                rent_roll=rent_roll,
+                updated_at=dt.datetime.now(dt.timezone.utc),
+            )
+            self.session.add(record)
+        self.session.flush()
+        
+        return {
+            "account_id": record.account_id,
+            "rent_roll": record.rent_roll,
+            "updated_at": record.updated_at,
+        }
+
 
 def _as_decimal(value) -> Optional[Decimal]:
     if value is None:

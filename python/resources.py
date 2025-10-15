@@ -285,6 +285,66 @@ def serialize_account(account: models.Account) -> Dict[str, Any]:
     }
 
 
+class ManualDataResource(BaseResource):
+    """Handles manual data for accounts (rent_roll, etc.)."""
+    
+    def on_get(self, req: Request, resp: Response, account_id: str) -> None:
+        with self.session_scope() as session:
+            repo = Repository(session)
+            user = self.authenticate(req, repo)
+            
+            account = repo.get_account(account_id)
+            if not account or account.user_id != user.id:
+                raise falcon.HTTPNotFound()
+            
+            manual_data = repo.get_manual_data(account_id)
+            resp.media = ensure_json_serializable(manual_data)
+            LOGGER.info("db.manual_data.get %s", {"user_id": user.id, "account_id": account_id})
+        
+        self.set_no_cache(resp)
+    
+    def on_put(self, req: Request, resp: Response, account_id: str) -> None:
+        body = req.media or {}
+        rent_roll = body.get("rent_roll")
+        
+        # Validate rent_roll
+        if rent_roll is not None:
+            try:
+                from decimal import Decimal, InvalidOperation as DecimalException
+                rent_roll_decimal = Decimal(str(rent_roll))
+                if rent_roll_decimal < 0:
+                    raise ValueError("negative value")
+            except (ValueError, DecimalException):
+                raise falcon.HTTPBadRequest(
+                    "invalid-rent-roll",
+                    "rent_roll must be a non-negative number or null"
+                )
+        
+        with self.session_scope() as session:
+            repo = Repository(session)
+            user = self.authenticate(req, repo)
+            
+            account = repo.get_account(account_id)
+            if not account or account.user_id != user.id:
+                raise falcon.HTTPNotFound()
+            
+            try:
+                manual_data = repo.upsert_manual_data(account_id, rent_roll)
+            except ValueError as e:
+                raise falcon.HTTPBadRequest(
+                    "invalid-rent-roll",
+                    str(e)
+                )
+            
+            resp.media = ensure_json_serializable(manual_data)
+            LOGGER.info(
+                "db.manual_data.put %s", 
+                {"user_id": user.id, "account_id": account_id, "rent_roll": rent_roll}
+            )
+        
+        self.set_no_cache(resp)
+
+
 class WebhookResource:
     """Teller webhook receiver with signature verification.
 

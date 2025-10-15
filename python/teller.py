@@ -32,6 +32,7 @@ try:
         EnrollmentResource,
         LiveBalanceResource,
         LiveTransactionsResource,
+        ManualDataResource,
     )
     from .teller_api import TellerClient
 except ImportError:  # pragma: no cover - fallback when executed as a script
@@ -48,6 +49,7 @@ except ImportError:  # pragma: no cover - fallback when executed as a script
         EnrollmentResource,
         LiveBalanceResource,
         LiveTransactionsResource,
+        ManualDataResource,
     )  # type: ignore
     from python.teller_api import TellerClient  # type: ignore
 
@@ -214,6 +216,7 @@ def create_app(args: argparse.Namespace) -> falcon.App:
         "applicationId": args.application_id,
         "environment": args.environment,
         "apiBaseUrl": args.app_api_base_url,
+        "FEATURE_MANUAL_DATA": os.getenv("FEATURE_MANUAL_DATA", "true").lower() == "true",
     }
 
     app.add_route("/api/healthz", HealthResource(args.environment))
@@ -236,6 +239,10 @@ def create_app(args: argparse.Namespace) -> falcon.App:
     app.add_route(
         "/api/accounts/{account_id}/transactions",
         LiveTransactionsResource(session_factory, teller_client),
+    )
+    app.add_route(
+        "/api/db/accounts/{account_id}/manual-data",
+        ManualDataResource(session_factory, teller_client),
     )
 
     # Webhooks: attempt to import resource dynamically to avoid hard import failures
