@@ -54,6 +54,7 @@ The server listens on `http://localhost:8001` by default and serves both the fro
 | `TELLER_SECRET_PRIVATE_KEY_NAME` | The name of the secret in Google Secret Manager containing the Teller private key. |
 | `TELLER_WEBHOOK_SECRETS` | Comma-separated Teller webhook signing secrets. |
 | `TELLER_WEBHOOK_TOLERANCE_SECONDS` | Max age for webhook timestamps (default 180). |
+| `FEATURE_USE_BACKEND` | Enable backend integration for UI (defaults to `false`). Set to `true` to allow UI to fetch from cached endpoints. |
 
 ## Google Secret Manager Integration
 
@@ -80,6 +81,7 @@ All credentials must be provisioned via environment variables or Secret Manager 
 | Database SSL mode (if required) | `DATABASE_SSLMODE` | Render environment variable |
 | Google Cloud project | `GCP_PROJECT_ID` | Render environment variable |
 | Secret names for Teller certificate/key | `TELLER_SECRET_CERTIFICATE_NAME`, `TELLER_SECRET_PRIVATE_KEY_NAME` | Render environment variable |
+| Backend integration feature flag | `FEATURE_USE_BACKEND` | Render environment variable (defaults to `false`) |
 
 ## Frontend behaviour
 

@@ -217,6 +217,7 @@ def create_app(args: argparse.Namespace) -> falcon.App:
         "environment": args.environment,
         "apiBaseUrl": args.app_api_base_url,
         "FEATURE_MANUAL_DATA": os.getenv("FEATURE_MANUAL_DATA", "true").lower() == "true",
+        "FEATURE_USE_BACKEND": os.getenv("FEATURE_USE_BACKEND", "false").lower() == "true",
     }
 
     app.add_route("/api/healthz", HealthResource(args.environment))
