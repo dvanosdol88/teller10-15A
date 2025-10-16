@@ -129,8 +129,6 @@ class EnrollmentResource(BaseResource):
 
                 log_enrollment_event("priming_result", **priming_result)
 
-            session.commit()
-
             accounts_response = {
                 "user": {"id": user.id, "name": user.name},
                 "accounts": [serialize_account(account) for account in accounts],
