@@ -191,16 +191,12 @@ class Dashboard {
 
     connectBtn?.addEventListener('click', () => connector.open());
     disconnectBtn?.addEventListener('click', () => {
-      clearEnrollment();
-      window.__tellerAccessToken = undefined;
-      this.reset();
-      if (this.statusEnvironment) {
-        this.statusEnvironment.textContent = this.config.environment;
+      if (this.statusUser) {
+        this.statusUser.textContent = 'Disconnected (viewing cached data)';
       }
-      setHidden(this.emptyState, false);
-      connectBtn?.focus();
+      this.disableRefreshButtons();
       if (disconnectBtn) disconnectBtn.hidden = true;
-      showToast('Disconnected. Connect again to load data.');
+      showToast('Disconnected. Viewing cached data. Refresh buttons disabled until reconnect.');
     });
   }
 
@@ -241,9 +237,24 @@ class Dashboard {
     if (this.statusEnvironment) {
       this.statusEnvironment.textContent = this.config.environment;
     }
+    this.enableRefreshButtons();
     const disconnect = document.getElementById('disconnect-btn');
     if (disconnect) disconnect.hidden = false;
     setHidden(this.emptyState, true);
+  }
+
+  disableRefreshButtons() {
+    document.querySelectorAll('.refresh-btn').forEach(btn => {
+      btn.disabled = true;
+      btn.title = 'Connect to refresh live data';
+    });
+  }
+
+  enableRefreshButtons() {
+    document.querySelectorAll('.refresh-btn').forEach(btn => {
+      btn.disabled = false;
+      btn.title = 'Fetch fresh data from Teller';
+    });
   }
 
   reset() {
