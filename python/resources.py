@@ -129,7 +129,7 @@ class EnrollmentResource(BaseResource):
 
                 log_enrollment_event("priming_result", **priming_result)
 
-            session.flush()
+            session.commit()
 
             accounts_response = {
                 "user": {"id": user.id, "name": user.name},
