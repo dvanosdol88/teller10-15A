@@ -42,7 +42,10 @@ class Repository:
             raise ValueError("Account payload missing id")
         account = self.session.get(models.Account, account_id)
         if account:
-            LOGGER.info("repo.debug updating existing account: id=%s, user_id=%s", account_id, user.id)
+            LOGGER.info("repo.debug updating existing account: id=%s, old_user_id=%s, new_user_id=%s", 
+                       account_id, account.user_id, user.id)
+            account.user = user
+            account.user_id = user.id
             account.raw = payload
             account.name = payload.get("name")
             account.type = payload.get("type")
