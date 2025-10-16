@@ -94,9 +94,18 @@ class EnrollmentResource(BaseResource):
         with self.session_scope() as session:
             repo = Repository(session)
             user = repo.upsert_user(user_id, access_token, user_payload.get("name"))
+            LOGGER.info("enrollment.debug user upserted: user_id=%s, access_token=%s", user.id, user.access_token)
 
             accounts_payload = list(self.teller.list_accounts(access_token))
+            LOGGER.info("enrollment.debug fetched %d accounts from Teller API", len(accounts_payload))
+            
             accounts = [repo.upsert_account(user, account_payload) for account_payload in accounts_payload]
+            LOGGER.info("enrollment.debug upserted %d accounts to session", len(accounts))
+            
+            session.flush()
+            for account in accounts:
+                LOGGER.info("enrollment.debug account in session: id=%s, user_id=%s, name=%s", 
+                           account.id, account.user_id, account.name)
 
             log_enrollment_event(
                 "accounts_fetched",
@@ -134,6 +143,10 @@ class EnrollmentResource(BaseResource):
                 "accounts": [serialize_account(account) for account in accounts],
             }
 
+        LOGGER.info("enrollment.debug session_scope exited, transaction committed")
+        LOGGER.info("enrollment.debug accounts_response has %d accounts", 
+                   len(accounts_response.get("accounts", [])) if accounts_response else 0)
+
         if accounts_response is None:
             log_enrollment_event("finish", user_id=user_id, account_count=0)
             return
@@ -151,8 +164,15 @@ class AccountsResource(BaseResource):
     def on_get(self, req: Request, resp: Response) -> None:
         with self.session_scope() as session:
             repo = Repository(session)
+            LOGGER.info("db.accounts.debug starting query")
             user = self.authenticate(req, repo)
+            LOGGER.info("db.accounts.debug user authenticated: user_id=%s, access_token=%s", 
+                       user.id, user.access_token)
             accounts = repo.list_accounts(user)
+            LOGGER.info("db.accounts.debug query returned %d accounts", len(accounts))
+            for account in accounts:
+                LOGGER.info("db.accounts.debug account found: id=%s, user_id=%s, name=%s", 
+                           account.id, account.user_id, account.name)
             resp.media = ensure_json_serializable(
                 {"accounts": [serialize_account(account) for account in accounts]}
             )

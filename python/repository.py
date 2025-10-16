@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import datetime as dt
+import logging
 from decimal import Decimal, InvalidOperation
 from typing import Iterable, List, Optional
 
@@ -9,6 +10,8 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from . import models
+
+LOGGER = logging.getLogger(__name__)
 
 
 class Repository:
@@ -39,6 +42,7 @@ class Repository:
             raise ValueError("Account payload missing id")
         account = self.session.get(models.Account, account_id)
         if account:
+            LOGGER.info("repo.debug updating existing account: id=%s, user_id=%s", account_id, user.id)
             account.raw = payload
             account.name = payload.get("name")
             account.type = payload.get("type")
@@ -48,6 +52,8 @@ class Repository:
             account.institution = institution.get("id") if isinstance(institution, dict) else institution
             account.currency = payload.get("currency")
         else:
+            LOGGER.info("repo.debug creating new account: id=%s, user_id=%s, name=%s", 
+                       account_id, user.id, payload.get("name"))
             institution = payload.get("institution") or {}
             account = models.Account(
                 id=account_id,
@@ -61,11 +67,15 @@ class Repository:
                 currency=payload.get("currency"),
             )
             self.session.add(account)
+            LOGGER.info("repo.debug account added to session")
         return account
 
     def list_accounts(self, user: models.User) -> List[models.Account]:
+        LOGGER.info("repo.debug list_accounts called for user_id=%s", user.id)
         stmt = select(models.Account).where(models.Account.user_id == user.id).order_by(models.Account.name)
-        return list(self.session.scalars(stmt))
+        results = list(self.session.scalars(stmt))
+        LOGGER.info("repo.debug list_accounts found %d accounts", len(results))
+        return results
 
     def get_account(self, account_id: str) -> Optional[models.Account]:
         return self.session.get(models.Account, account_id)
