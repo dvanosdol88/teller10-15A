@@ -7,10 +7,12 @@ from typing import Any, Dict, Optional
 
 import falcon
 from falcon import Request, Response
+from pydantic import ValidationError
 
 from . import models
 from .repository import Repository
 from .teller_api import TellerAPIError, TellerClient
+from .schemas import EnrollmentRequest
 from .utils import ensure_json_serializable
 import hmac
 import hashlib
@@ -79,13 +81,20 @@ class ConnectTokenResource(BaseResource):
 class EnrollmentResource(BaseResource):
     def on_post(self, req: Request, resp: Response) -> None:
         body = req.media or {}
-        enrollment = body.get("enrollment") or body
+        try:
+            enrollment_request = EnrollmentRequest.model_validate(body)
+        except ValidationError as exc:
+            error_details = ensure_json_serializable(exc.errors())
+            LOGGER.warning("Invalid enrollment payload received: %s", error_details)
+            raise falcon.HTTPBadRequest(
+                title="invalid-enrollment",
+                description="Invalid enrollment payload",
+            )
 
-        access_token = enrollment.get("accessToken") or enrollment.get("access_token")
-        user_payload = enrollment.get("user") or {}
-        user_id = user_payload.get("id")
-        if not access_token or not user_id:
-            raise falcon.HTTPBadRequest("invalid-enrollment", "accessToken and user.id are required")
+        enrollment = enrollment_request.enrollment
+        access_token = enrollment.access_token
+        user_payload = enrollment.user.model_dump(exclude_none=True)
+        user_id = user_payload["id"]
 
         log_enrollment_event("start", user_id=user_id)
 
