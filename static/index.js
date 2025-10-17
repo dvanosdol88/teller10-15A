@@ -1,93 +1,15 @@
 const STORE_KEY = 'teller:enrollment';
 const PASSCODE = '2123';
 const MAX_TRANSACTIONS = 10;
-const PASSCODE_DIGIT_LABELS = ['First', 'Second', 'Third', 'Fourth', 'Fifth', 'Sixth'];
-
 const toastEl = document.getElementById('toast');
 
 let runtimeConfig = null;
 
-function createPasscodeOverlay() {
-  if (!document.body) return {};
-
-  const overlay = document.createElement('div');
-  overlay.id = 'passcode-overlay';
-  overlay.className = 'passcode-overlay';
-  overlay.setAttribute('role', 'dialog');
-  overlay.setAttribute('aria-modal', 'true');
-  overlay.setAttribute('aria-labelledby', 'passcode-title');
-
-  const dialog = document.createElement('div');
-  dialog.className = 'passcode-dialog';
-
-  const title = document.createElement('h2');
-  title.id = 'passcode-title';
-  title.textContent = 'Enter passcode';
-
-  const hint = document.createElement('p');
-  hint.className = 'passcode-hint';
-  const digitDescription = PASSCODE.length === 1 ? 'digit' : `${PASSCODE.length}-digit code`;
-  hint.textContent = `This personal dashboard is locked. Enter the ${digitDescription} to continue.`;
-
-  const form = document.createElement('form');
-  form.id = 'passcode-form';
-  form.className = 'passcode-form';
-  form.setAttribute('autocomplete', 'off');
-
-  const inputsWrapper = document.createElement('div');
-  inputsWrapper.className = 'passcode-inputs';
-
-  for (let index = 0; index < PASSCODE.length; index += 1) {
-    const input = document.createElement('input');
-    input.className = 'passcode-input';
-    input.type = 'password';
-    input.inputMode = 'numeric';
-    input.maxLength = 1;
-    input.pattern = '[0-9]*';
-    const label = PASSCODE_DIGIT_LABELS[index] ?? `Digit ${index + 1}`;
-    input.setAttribute('aria-label', `${label} digit`);
-    inputsWrapper.appendChild(input);
-  }
-
-  const submit = document.createElement('button');
-  submit.type = 'submit';
-  submit.className = 'btn btn--primary passcode-submit';
-  submit.textContent = 'Unlock';
-
-  form.append(inputsWrapper, submit);
-
-  const error = document.createElement('p');
-  error.id = 'passcode-error';
-  error.className = 'passcode-error';
-  error.setAttribute('role', 'status');
-  error.setAttribute('aria-live', 'polite');
-
-  dialog.append(title, hint, form, error);
-  overlay.appendChild(dialog);
-  document.body.prepend(overlay);
-  document.body.classList.add('passcode-locked');
-
-  return {
-    overlay,
-    form,
-    errorEl: error,
-    inputs: Array.from(inputsWrapper.querySelectorAll('.passcode-input')),
-  };
-}
-
 function waitForPasscodeUnlock() {
-  let overlay = document.getElementById('passcode-overlay');
-  let form = document.getElementById('passcode-form');
-  let errorEl = document.getElementById('passcode-error');
-  let inputs = Array.from(document.querySelectorAll('.passcode-input'));
-
-  if (!overlay || !form || inputs.length !== PASSCODE.length) {
-    const created = createPasscodeOverlay();
-    overlay = created.overlay ?? overlay;
-    form = created.form ?? form;
-    errorEl = created.errorEl ?? errorEl;
-    inputs = created.inputs ?? inputs;
-  }
+  const overlay = document.getElementById('passcode-overlay');
+  const form = document.getElementById('passcode-form');
+  const errorEl = document.getElementById('passcode-error');
+  const inputs = Array.from(document.querySelectorAll('.passcode-input'));
 
   if (!overlay || !form || inputs.length !== PASSCODE.length) {
     console.warn('Passcode overlay is unavailable; continuing without lock screen.');

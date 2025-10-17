@@ -18,7 +18,7 @@ that still matter, and tracks the heavier items as "stretch" improvements should
 - [x] **PostgreSQL migration path.** Alembic migrations and configuration are ready for the managed database instance.
 
 ## High-value, low-effort follow ups (Recommended)
-- [ ] **Lightweight access gate.** Keep the new 4-digit passcode gate active so casual visitors cannot read cached
+- [x] **Lightweight access gate.** Keep the new 4-digit passcode gate active so casual visitors cannot read cached
   financial data. (Complete once the overlay ships.)
 - [ ] **Schema validation on enrollments.** Use a small validation library (e.g., `marshmallow` or `pydantic`) to reject
   malformed payloads. Even for two users, this closes off easy ways to corrupt stored enrollments.
