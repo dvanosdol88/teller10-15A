@@ -1,4 +1,3 @@
-const STORE_KEY = 'teller:enrollment';
 const PASSCODE = '2123';
 const MAX_TRANSACTIONS = 10;
 
@@ -182,25 +181,6 @@ function formatAmount(amount, currency = 'USD') {
   return Number(amount) >= 0 ? `+${formatted}` : `-${formatted}`;
 }
 
-function getStoredEnrollment() {
-  const raw = localStorage.getItem(STORE_KEY);
-  if (!raw) return null;
-  try {
-    return JSON.parse(raw);
-  } catch (error) {
-    console.warn('Failed to parse stored enrollment', error);
-    return null;
-  }
-}
-
-function storeEnrollment(enrollment) {
-  localStorage.setItem(STORE_KEY, JSON.stringify(enrollment));
-}
-
-function clearEnrollment() {
-  localStorage.removeItem(STORE_KEY);
-}
-
 async function apiRequest(path, { method = 'GET', body, headers = {}, params } = {}) {
   const token = window.__tellerAccessToken;
   if (!token) throw new Error('Missing access token');
@@ -248,19 +228,15 @@ class Dashboard {
     this.statusToken = document.getElementById('status-token');
     this.template = document.getElementById('account-card-template');
     this.cards = new Map();
+    this.currentEnrollment = null;
   }
 
   init() {
     if (this.statusEnvironment) {
       this.statusEnvironment.textContent = this.config.environment;
     }
-    const enrollment = getStoredEnrollment();
-    if (enrollment?.accessToken) {
-      this.onConnected(enrollment);
-      this.bootstrap();
-    } else {
-      setHidden(this.emptyState, false);
-    }
+    this.reset();
+    setHidden(this.emptyState, false);
     this.setupConnect();
   }
 
@@ -279,7 +255,6 @@ class Dashboard {
       onSuccess: async (enrollment) => {
         try {
           window.__tellerAccessToken = enrollment.accessToken;
-          storeEnrollment(enrollment);
           this.onConnected(enrollment);
           await apiRequest('/enrollments', {
             method: 'POST',
@@ -289,7 +264,7 @@ class Dashboard {
           showToast('Enrollment saved and cache primed.');
         } catch (error) {
           console.error(error);
-          showToast('Unable to store enrollment. Please try again.', 'error');
+          showToast('Unable to complete enrollment. Please try again.', 'error');
         }
       },
       onExit: (data) => {
@@ -303,8 +278,12 @@ class Dashboard {
 
     connectBtn?.addEventListener('click', () => connector.open());
     disconnectBtn?.addEventListener('click', () => {
+      this.clearSession();
       if (this.statusUser) {
         this.statusUser.textContent = 'Disconnected (viewing cached data)';
+      }
+      if (this.statusToken) {
+        this.statusToken.textContent = '—';
       }
       this.disableRefreshButtons();
       if (disconnectBtn) disconnectBtn.hidden = true;
@@ -329,7 +308,7 @@ class Dashboard {
     } catch (error) {
       if (error.status === 401) {
         this.reset();
-        clearEnrollment();
+        setHidden(this.emptyState, false);
         showToast('Session expired. Please reconnect.', 'error');
       } else {
         console.error('Failed to load accounts', error);
@@ -339,6 +318,7 @@ class Dashboard {
   }
 
   onConnected(enrollment) {
+    this.currentEnrollment = enrollment;
     window.__tellerAccessToken = enrollment.accessToken;
     if (this.statusUser) {
       this.statusUser.textContent = enrollment.user?.id ?? 'Connected';
@@ -353,6 +333,11 @@ class Dashboard {
     const disconnect = document.getElementById('disconnect-btn');
     if (disconnect) disconnect.hidden = false;
     setHidden(this.emptyState, true);
+  }
+
+  clearSession() {
+    window.__tellerAccessToken = null;
+    this.currentEnrollment = null;
   }
 
   disableRefreshButtons() {
@@ -370,16 +355,20 @@ class Dashboard {
   }
 
   reset() {
+    this.clearSession();
     if (this.statusUser) {
       this.statusUser.textContent = 'Not connected';
     }
     if (this.statusToken) {
       this.statusToken.textContent = '—';
     }
+    const disconnect = document.getElementById('disconnect-btn');
+    if (disconnect) disconnect.hidden = true;
     if (this.grid) {
       this.grid.innerHTML = '';
     }
     this.cards.clear();
+    this.disableRefreshButtons();
   }
 
   renderCard(account) {
@@ -407,8 +396,8 @@ class Dashboard {
       } catch (error) {
         console.error('Refresh failed', error);
         if (error.status === 401) {
-          clearEnrollment();
           this.reset();
+          setHidden(this.emptyState, false);
           showToast('Session expired. Please reconnect.', 'error');
         } else {
           showToast('Unable to refresh account.', 'error');
