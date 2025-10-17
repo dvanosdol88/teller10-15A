@@ -20,10 +20,11 @@ that still matter, and tracks the heavier items as "stretch" improvements should
 ## High-value, low-effort follow ups (Recommended)
 - [ ] **Lightweight access gate.** Keep the new 4-digit passcode gate active so casual visitors cannot read cached
   financial data. (Complete once the overlay ships.)
-- [ ] **Schema validation on enrollments.** Use a small validation library (e.g., `marshmallow` or `pydantic`) to reject
+- [x] **Schema validation on enrollments.** Use a small validation library (e.g., `marshmallow` or `pydantic`) to reject
   malformed payloads. Even for two users, this closes off easy ways to corrupt stored enrollments.
-- [ ] **Tame client token exposure.** Remove the access token from `localStorage` and the status panel when practical;
-  storing it only in memory keeps the risk of shoulder surfing or saved browser state low without extra backend work.
+- [ ] **Tame client token exposure.** Remove the access token from persistent browser storage and the status panel when
+  practical; storing it only in memory keeps the risk of shoulder surfing or saved browser state low without extra backend
+  work.
 - [ ] **Friendly health probe and structured logs.** Emit a basic JSON line per request and expose `/api/healthz` for
   Render monitoring. This improves operability without complex tooling.
 

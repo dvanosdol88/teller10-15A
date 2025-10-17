@@ -86,7 +86,7 @@ The application will then use these secrets when run in `development` or `produc
     *   `/api/accounts/{id}/transactions?count=10`: Fetches live transactions from Teller.
 *   **Frontend Behavior:**
     *   Launches Teller Connect from a button.
-    *   Posts enrollments to the backend and persists them to `localStorage`.
+    *   Posts enrollments to the backend and keeps the access token in memory only for the active session.
     *   Displays cached balances and transactions.
     *   "Refresh live" functionality calls Teller API directly and re-renders cached data.
     *   Static assets are browser-cached; API responses set `Cache-Control: no-store`.
