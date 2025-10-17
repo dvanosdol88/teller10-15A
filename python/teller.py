@@ -67,30 +67,55 @@ LOGGER = logging.getLogger(__name__)
 class IndexResource:
     def __init__(self, static_root: pathlib.Path) -> None:
         self.static_root = static_root.resolve()
+        self.index_path = (self.static_root / "index.html").resolve()
+
+    def _ensure_exists(self) -> pathlib.Path:
+        if not self.index_path.exists():
+            raise falcon.HTTPNotFound()
+        return self.index_path
+
+    def _apply_headers(self, resp: falcon.Response, *, include_body: bool) -> None:
+        path = self._ensure_exists()
+        resp.content_type = "text/html"
+        resp.set_header("Cache-Control", "public, max-age=60")
+        resp.content_length = path.stat().st_size
+        if include_body:
+            resp.data = path.read_bytes()
 
     def on_get(self, req: falcon.Request, resp: falcon.Response) -> None:
-        path = self.static_root / "index.html"
-        if not path.exists():
-            raise falcon.HTTPNotFound()
-        resp.content_type = "text/html"
-        resp.data = path.read_bytes()
-        resp.set_header("Cache-Control", "public, max-age=60")
+        self._apply_headers(resp, include_body=True)
+
+    def on_head(self, req: falcon.Request, resp: falcon.Response) -> None:
+        self._apply_headers(resp, include_body=False)
 
 
 class StaticResource:
     def __init__(self, static_root: pathlib.Path) -> None:
         self.static_root = static_root.resolve()
 
-    def on_get(self, req: falcon.Request, resp: falcon.Response, filename: str) -> None:
+    def _resolve_path(self, filename: str) -> pathlib.Path:
         safe_path = pathlib.Path(filename)
         full_path = (self.static_root / safe_path).resolve()
-        if not str(full_path).startswith(str(self.static_root.resolve())) or not full_path.exists():
+        if not str(full_path).startswith(str(self.static_root)) or not full_path.exists():
             raise falcon.HTTPNotFound()
-        content_type, _ = mimetypes.guess_type(full_path.name)
+        return full_path
+
+    def _apply_headers(self, resp: falcon.Response, path: pathlib.Path, *, include_body: bool) -> None:
+        content_type, _ = mimetypes.guess_type(path.name)
         if content_type:
             resp.content_type = content_type
-        resp.data = full_path.read_bytes()
         resp.set_header("Cache-Control", "public, max-age=3600")
+        resp.content_length = path.stat().st_size
+        if include_body:
+            resp.data = path.read_bytes()
+
+    def on_get(self, req: falcon.Request, resp: falcon.Response, filename: str) -> None:
+        path = self._resolve_path(filename)
+        self._apply_headers(resp, path, include_body=True)
+
+    def on_head(self, req: falcon.Request, resp: falcon.Response, filename: str) -> None:
+        path = self._resolve_path(filename)
+        self._apply_headers(resp, path, include_body=False)
 
 
 class HealthResource:
