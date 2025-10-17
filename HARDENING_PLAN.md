@@ -6,10 +6,13 @@ pulls from the current implementation in `python/` and `static/`, and the constr
 (two trusted users, preference for simplicity, Render deployment). Each phase builds on the previous one so we can
 ship incremental improvements without destabilizing the app.
 
-## Phase 1 – Stabilize runtime and secrets (Days 0‑3)
+## COMPLETED
+## Phase 1 – Stabilize runtime and secrets (Days 0‑3) 
 1. **Replace the development WSGI server.** Swap `wsgiref.simple_server` for Waitress so the app uses a production-ready
    server while staying pure-Python and easy to operate on Render. (`python/teller.py` currently imports
    `wsgiref.simple_server` in `main`.)
+
+## COMPLETED
 2. **Move hard-coded identifiers into configuration.** Load the Teller application ID, environment flag, and API base URL
    from environment variables instead of embedding them in both backend arguments and the frontend bundle
    (`python/teller.py` defaults the application ID; `static/index.js` hardcodes the same string).
@@ -20,6 +23,7 @@ ship incremental improvements without destabilizing the app.
    Render-provided secrets). Ensure all are stored as Render environment variables or Secret Manager entries instead of
    files under `./secrets`.
 
+## COMPLETED
 ## Phase 2 – Strengthen authentication & data handling (Days 3‑7)
 1. **Protect stored Teller access tokens.** Encrypt `models.User.access_token` before persisting and store the encryption
    key in a managed secret store. Tokens are currently saved in plaintext (`python/models.py`).
