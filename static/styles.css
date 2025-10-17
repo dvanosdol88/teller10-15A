@@ -28,15 +28,6 @@ body {
   padding: 32px;
 }
 
-body.passcode-locked {
-  overflow: hidden;
-}
-
-body.passcode-locked .page {
-  pointer-events: none;
-  user-select: none;
-}
-
 .passcode-overlay {
   position: fixed;
   inset: 0;

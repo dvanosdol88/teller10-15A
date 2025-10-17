@@ -25,6 +25,10 @@ function waitForPasscodeUnlock() {
   overlay.removeAttribute('aria-hidden');
   overlay.setAttribute('aria-modal', 'true');
 
+  if (!overlay || !form || inputs.length !== PASSCODE.length) {
+    return Promise.resolve();
+  }
+
   const focusFirstEmpty = () => {
     const target = inputs.find((input) => !input.value) || inputs[0];
     target.focus();
@@ -53,14 +57,10 @@ function waitForPasscodeUnlock() {
     const unlock = () => {
       if (unlocked) return;
       unlocked = true;
-      document.body?.classList.remove('passcode-locked');
-      page?.removeAttribute('inert');
       overlay.classList.add('hidden');
       overlay.setAttribute('aria-hidden', 'true');
       overlay.removeAttribute('aria-modal');
-      if (errorEl) {
-        errorEl.textContent = '';
-      }
+      errorEl.textContent = '';
       clearInputs();
       resolve();
     };
@@ -74,9 +74,7 @@ function waitForPasscodeUnlock() {
         inputs.forEach((el, idx) => {
           el.value = digits[idx] ?? '';
         });
-        if (errorEl) {
-          errorEl.textContent = '';
-        }
+        errorEl.textContent = '';
         const nextIndex = Math.min(digits.length, inputs.length - 1);
         inputs[nextIndex].focus();
         if (digits.length === inputs.length) {
@@ -91,9 +89,7 @@ function waitForPasscodeUnlock() {
           inputs[index + 1].focus();
           inputs[index + 1].select?.();
         }
-        if (errorEl) {
-          errorEl.textContent = '';
-        }
+        errorEl.textContent = '';
         if (inputs.every((el) => el.value)) {
           submitForm();
         }
@@ -126,9 +122,7 @@ function waitForPasscodeUnlock() {
       if (attempt === PASSCODE) {
         unlock();
       } else {
-        if (errorEl) {
-          errorEl.textContent = 'Incorrect passcode. Please try again.';
-        }
+        errorEl.textContent = 'Incorrect passcode. Please try again.';
         clearInputs();
         focusFirstEmpty();
       }
