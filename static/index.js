@@ -1,5 +1,10 @@
-window.FEATURE_USE_BACKEND = false;
-window.TEST_BEARER_TOKEN = undefined;
+if (typeof window.FEATURE_USE_BACKEND !== 'boolean') {
+  window.FEATURE_USE_BACKEND = false;
+}
+
+if (typeof window.TEST_BEARER_TOKEN !== 'string' || !window.TEST_BEARER_TOKEN.trim()) {
+  window.TEST_BEARER_TOKEN = undefined;
+}
 
 
 const BackendAdapter = (() => {
