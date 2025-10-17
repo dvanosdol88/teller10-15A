@@ -2,12 +2,13 @@
 from __future__ import annotations
 
 import argparse
+import base64
+import json
 import logging
 import mimetypes
 import os
 import pathlib
 from typing import Optional
-import base64
 
 import falcon
 try:  # Load .env in local development if available
@@ -128,12 +129,24 @@ class HealthResource:
 
 
 class ConfigResource:
-    def __init__(self, config: dict[str, str]) -> None:
+    def __init__(self, config: dict[str, object]) -> None:
         self.config = config
 
     def on_get(self, req: falcon.Request, resp: falcon.Response) -> None:
         resp.media = self.config
         resp.set_header("Cache-Control", "no-store")
+
+
+def build_runtime_config(args: argparse.Namespace) -> dict[str, object]:
+    """Construct runtime configuration shared by API and CLI."""
+
+    return {
+        "applicationId": args.application_id,
+        "environment": args.environment,
+        "apiBaseUrl": args.app_api_base_url,
+        "FEATURE_MANUAL_DATA": os.getenv("FEATURE_MANUAL_DATA", "true").lower() == "true",
+        "FEATURE_USE_BACKEND": os.getenv("FEATURE_USE_BACKEND", "false").lower() == "true",
+    }
 
 
 def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
@@ -237,13 +250,7 @@ def create_app(args: argparse.Namespace) -> falcon.App:
     app.add_route("/", IndexResource(static_root))
     app.add_route("/static/{filename}", StaticResource(static_root))
 
-    runtime_config = {
-        "applicationId": args.application_id,
-        "environment": args.environment,
-        "apiBaseUrl": args.app_api_base_url,
-        "FEATURE_MANUAL_DATA": os.getenv("FEATURE_MANUAL_DATA", "true").lower() == "true",
-        "FEATURE_USE_BACKEND": os.getenv("FEATURE_USE_BACKEND", "false").lower() == "true",
-    }
+    runtime_config = build_runtime_config(args)
 
     app.add_route("/api/healthz", HealthResource(args.environment))
     app.add_route("/api/config", ConfigResource(runtime_config))
@@ -305,13 +312,21 @@ def create_app(args: argparse.Namespace) -> falcon.App:
 def main(argv: Optional[list[str]] = None) -> None:
     # Check if first argument is 'migrate' command (important-comment)
     import sys
+
     args_to_check = argv if argv is not None else sys.argv[1:]
-    if args_to_check and len(args_to_check) > 0 and args_to_check[0] == "migrate":
-        logging.basicConfig(level=logging.INFO)
-        LOGGER.info("Running database migrations...")
-        run_migrations()
-        return
-    
+    if args_to_check and len(args_to_check) > 0:
+        if args_to_check[0] == "migrate":
+            logging.basicConfig(level=logging.INFO)
+            LOGGER.info("Running database migrations...")
+            run_migrations()
+            return
+
+        if args_to_check[0] == "config":
+            args = parse_args(args_to_check[1:])
+            runtime_config = build_runtime_config(args)
+            print(json.dumps(runtime_config, indent=2, sort_keys=True))
+            return
+
     # Otherwise parse normal server arguments (important-comment)
     args = parse_args(argv)
     app = create_app(args)
