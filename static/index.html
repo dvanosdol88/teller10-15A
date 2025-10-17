@@ -1,119 +1,151 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en">
-  <head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Teller Cached Dashboard</title>
-    <link rel="preconnect" href="https://fonts.googleapis.com" />
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
-    <link rel="stylesheet" href="/static/styles.css" />
-  </head>
-  <body>
-    <div
-      id="passcode-overlay"
-      class="passcode-overlay"
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="passcode-title"
-    >
-      <div class="passcode-dialog">
-        <h2 id="passcode-title">Enter passcode</h2>
-        <p class="passcode-hint">This personal dashboard is locked. Enter the four-digit code to continue.</p>
-        <form id="passcode-form" class="passcode-form" autocomplete="off">
-          <div class="passcode-inputs">
-            <input class="passcode-input" type="password" inputmode="numeric" maxlength="1" pattern="[0-9]*" aria-label="First digit" />
-            <input class="passcode-input" type="password" inputmode="numeric" maxlength="1" pattern="[0-9]*" aria-label="Second digit" />
-            <input class="passcode-input" type="password" inputmode="numeric" maxlength="1" pattern="[0-9]*" aria-label="Third digit" />
-            <input class="passcode-input" type="password" inputmode="numeric" maxlength="1" pattern="[0-9]*" aria-label="Fourth digit" />
-          </div>
-          <button type="submit" class="btn btn--primary passcode-submit">Unlock</button>
-        </form>
-        <p id="passcode-error" class="passcode-error" role="status" aria-live="polite"></p>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Teller Cached Dashboard (Visual Only)</title>
+  <link rel="stylesheet" href="./styles.css" />
+</head>
+<body>
+  <header class="page-header">
+    <div class="header-inner">
+      <div class="brand">
+        <img src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none'%3E%3Ccircle cx='12' cy='12' r='10' stroke='%236ee7b7' stroke-width='2'/%3E%3Cpath d='M7 13l3 3 7-7' stroke='%2360a5fa' stroke-width='2' fill='none'/%3E%3C/svg%3E" alt="Teller" width="24" height="24" />
+        <h1>Teller Cached Dashboard</h1>
+      </div>
+      <div class="actions">
+        <button id="connect-btn" class="btn" disabled>Connect account</button>
+        <button id="disconnect-btn" class="btn btn-secondary" disabled>Disconnect</button>
       </div>
     </div>
-    <div class="page">
-      <header class="page__header">
-        <div>
-          <h1>Teller Cached Dashboard</h1>
-          <p class="subtitle">Flip each card to inspect cached balances and transactions. Refresh live data whenever you need the latest snapshot.</p>
-        </div>
+  </header>
+
+  <section class="status-bar">
+    <div class="status-item">
+      <div class="label">Environment</div>
+      <div class="value" id="env-value">development</div>
+    </div>
+    <div class="status-item">
+      <div class="label">User</div>
+      <div class="value" id="user-value">—</div>
+    </div>
+    <div class="status-item token">
+      <div class="label">Access token</div>
+      <div class="value" id="token-value">—</div>
+    </div>
+  </section>
+
+  <main class="page-main">
+    <section class="accounts">
+      <div class="accounts-header">
+        <h2>Accounts</h2>
         <div class="actions">
-          <button id="connect-btn" class="btn btn--primary">Connect an account</button>
-          <button id="disconnect-btn" class="btn btn--ghost" hidden>Disconnect</button>
+          <button id="refresh-all" class="btn btn-secondary">Refresh all</button>
         </div>
-      </header>
-      <section class="status-bar">
-        <div>
-          <span class="label">Environment</span>
-          <span id="status-environment" class="value"></span>
-        </div>
-        <div>
-          <span class="label">User</span>
-          <span id="status-user" class="value">Not connected</span>
-        </div>
-        <div>
-          <span class="label">Access token</span>
-          <span id="status-token" class="value">—</span>
-        </div>
-      </section>
-      <main>
-        <div id="empty-state" class="empty-state hidden">
-          <h2>No accounts yet</h2>
-          <p>Use the “Connect an account” button to complete Teller Connect and load cached balances.</p>
-        </div>
-        <div id="accounts-grid" class="cards-grid" aria-live="polite"></div>
-      </main>
-    </div>
+      </div>
 
-    <template id="account-card-template">
-      <div class="card" data-account-id="">
-        <div class="card-inner">
-          <div class="card-face card-face--front">
-            <div class="card-header">
-              <div>
-                <div class="account-name"></div>
-                <div class="account-subtitle"></div>
-              </div>
-              <button class="btn btn--ghost btn--sm flip-btn" type="button">Recent activity</button>
+      <div id="empty-state" class="empty-state hidden">
+        <div class="empty-icon">💳</div>
+        <div class="empty-title">No accounts connected</div>
+        <div class="empty-subtitle">Use “Connect account” to link your bank and view cached data.</div>
+      </div>
+
+      <div id="accounts-grid" class="cards-grid"></div>
+    </section>
+  </main>
+
+  <template id="account-card-template">
+    <article class="card" data-account-id="">
+      <div class="card-inner">
+        <div class="card-face card-face-front">
+          <div class="card-header">
+            <div>
+              <div class="account-name">Account</div>
+              <div class="account-subtitle"></div>
             </div>
-            <div class="balance-values">
-              <div>
-                <span class="label">Available</span>
-                <span class="value balance-available">—</span>
-              </div>
-              <div>
-                <span class="label">Ledger</span>
-                <span class="value balance-ledger">—</span>
-              </div>
+            <div class="card-actions">
+              <button class="btn btn-icon flip-btn" title="Flip">↺</button>
             </div>
-            <div class="balance-meta">
-              <span class="label">Last cached</span>
-              <span class="value balance-cached">Never</span>
-            </div>
-            <button class="btn btn--secondary refresh-btn" type="button">Refresh live</button>
           </div>
-          <div class="card-face card-face--back">
-            <div class="card-header">
-              <div>
-                <div class="account-name"></div>
-                <div class="account-subtitle"></div>
+          <div class="balances">
+            <div class="balance">
+              <div class="label">Available</div>
+              <div class="value balance-available">$0.00</div>
+            </div>
+            <div class="balance">
+              <div class="label">Ledger</div>
+              <div class="value balance-ledger">$0.00</div>
+            </div>
+            <div class="meta">
+              <span class="balance-cached">—</span>
+            </div>
+          </div>
+          <div class="card-footer">
+            <button class="btn refresh-btn">Refresh</button>
+          </div>
+        </div>
+
+        <div class="card-face card-face-back">
+          <div class="card-header">
+            <div>
+              <div class="account-name">Account</div>
+              <div class="account-subtitle"></div>
+            </div>
+            <div class="card-actions">
+              <button class="btn btn-icon flip-btn" title="Flip">↺</button>
+            </div>
+          </div>
+          <div class="back-view-toggle">
+            <button class="toggle-btn active" data-view="transactions">Transactions</button>
+            <button class="toggle-btn" data-view="manual-data">Manual Data</button>
+          </div>
+          <div class="transactions view-panel active">
+            <ul class="transactions-list"></ul>
+            <div class="transactions-empty">No cached transactions</div>
+          </div>
+          <div class="manual-data view-panel">
+            <div class="manual-data-content">
+              <div class="manual-data-field">
+                <div class="label">Rent Roll</div>
+                <div class="value rent-roll-value">—</div>
               </div>
-              <button class="btn btn--ghost btn--sm flip-btn" type="button">Back to balance</button>
+              <div class="manual-data-meta">
+                <span class="manual-data-updated">—</span>
+              </div>
             </div>
-            <div class="transactions">
-              <ul class="transactions-list"></ul>
-              <div class="transactions-empty hidden">No cached transactions yet.</div>
-              <div class="transactions-cached"></div>
-            </div>
+            <button class="btn edit-manual-data-btn">Edit</button>
+          </div>
+          <div class="card-footer">
+            <span class="transactions-cached">—</span>
           </div>
         </div>
       </div>
-    </template>
+    </article>
+  </template>
 
-    <div id="toast" class="toast hidden" role="status" aria-live="polite"></div>
+  <div id="toast" class="toast hidden"></div>
 
-    <script src="https://cdn.teller.io/connect/connect.js"></script>
-    <script type="module" src="/static/index.js"></script>
-  </body>
+  <div id="manual-data-modal" class="modal hidden">
+    <div class="modal-overlay"></div>
+    <div class="modal-content">
+      <div class="modal-header">
+        <h3>Edit Manual Data</h3>
+        <button class="modal-close">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div class="form-field">
+          <label for="rent-roll-input">Rent Roll ($)</label>
+          <input type="number" id="rent-roll-input" step="0.01" min="0" placeholder="Enter amount">
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary modal-cancel">Cancel</button>
+        <button class="btn btn-secondary modal-clear">Clear</button>
+        <button class="btn modal-save">Save</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="./index.js" defer></script>
+</body>
 </html>
