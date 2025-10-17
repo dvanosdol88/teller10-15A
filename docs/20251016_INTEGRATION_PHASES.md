@@ -213,8 +213,8 @@ runtime_config = {
 | `TELLER_APP_API_BASE_URL` | API base URL for frontend | `/api` |
 | `DATABASE_INTERNAL_URL` | Postgres connection string | Required |
 | `DATABASE_SSLMODE` | SSL mode for Postgres | Optional |
-| `TELLER_CERTIFICATE` | TLS certificate path or PEM | Required |
-| `TELLER_PRIVATE_KEY` | TLS private key path or PEM | Required |
+| `TELLER_CERTIFICATE` | STORED AS A SECRET FILE RENDER DASHBOARD |  IN TLS certificate path or PEM | Required |
+| `TELLER_PRIVATE_KEY` | STORED AS A SECRET FILE RENDER DASHBOARD |TLS private key path or PEM | Required |
 
 ### Cached Endpoints (Available)
 All required endpoints are implemented and ready:
