@@ -43,22 +43,17 @@ The server listens on `http://localhost:8001` by default and serves both the fro
 | `TELLER_APPLICATION_ID` | Teller application identifier. |
 | `TELLER_ENVIRONMENT` | Teller environment passed to both the backend client and Teller Connect (defaults to `development`). |
 | `TELLER_APP_API_BASE_URL` | Base URL the frontend uses for API requests (defaults to `/api`). |
-| `TELLER_CERTIFICATE` | Path to the TLS certificate or PEM contents (development/production). |
-| `TELLER_PRIVATE_KEY` | Path to the TLS private key or PEM contents (development/production). |
-| `TELLER_CERTIFICATE_B64` | Base64-encoded PEM contents of the certificate (alternative to `TELLER_CERTIFICATE`). |
-| `TELLER_PRIVATE_KEY_B64` | Base64-encoded PEM contents of the private key (alternative to `TELLER_PRIVATE_KEY`). |
+| `TELLER_CERTIFICATE` | Stored as Secret FILES in Render dashboard|
+| `TELLER_PRIVATE_KEY` | Stored as Secret FILES in Render dashboard|
 | `DATABASE_INTERNAL_URL` | Render Postgres URL (falls back to local SQLite). |
 | `DATABASE_SSLMODE` | SSL mode appended to the Postgres URL when provided. |
-| `GCP_PROJECT_ID` | Google Cloud project ID for Secret Manager. |
-| `TELLER_SECRET_CERTIFICATE_NAME` | The name of the secret in Google Secret Manager containing the Teller certificate. |
-| `TELLER_SECRET_PRIVATE_KEY_NAME` | The name of the secret in Google Secret Manager containing the Teller private key. |
 | `TELLER_WEBHOOK_SECRETS` | Comma-separated Teller webhook signing secrets. |
 | `TELLER_WEBHOOK_TOLERANCE_SECONDS` | Max age for webhook timestamps (default 180). |
 | `FEATURE_USE_BACKEND` | Enable backend integration for UI (defaults to `false`). Set to `true` to allow UI to fetch from cached endpoints. |
 
-## Google Secret Manager Integration
+## Google Secret Manager Integration (Not currently in use)
 
-Instead of storing the certificate and private key files locally, the application can be configured to fetch them from Google Cloud Secret Manager.
+Instead of storing the certificate and private key files locally or on Render, the application can be configured to fetch them from Google Cloud Secret Manager.
 
 To enable this, set the following environment variables:
 
@@ -79,8 +74,8 @@ All credentials must be provisioned via environment variables or Secret Manager 
 | Teller private key (PEM contents or path) | `TELLER_PRIVATE_KEY` | Secret Manager preferred; Render env var for development |
 | Database connection string | `DATABASE_INTERNAL_URL` | Render managed Postgres / secret |
 | Database SSL mode (if required) | `DATABASE_SSLMODE` | Render environment variable |
-| Google Cloud project | `GCP_PROJECT_ID` | Render environment variable |
-| Secret names for Teller certificate/key | `TELLER_SECRET_CERTIFICATE_NAME`, `TELLER_SECRET_PRIVATE_KEY_NAME` | Render environment variable |
+| NOT IN USE | Google Cloud project | `GCP_PROJECT_ID` | Render environment variable |
+| STORED AS FILES | Secret names for Teller certificate/key | `TELLER_SECRET_CERTIFICATE_NAME`, `TELLER_SECRET_PRIVATE_KEY_NAME` | Render environment variable |
 | Backend integration feature flag | `FEATURE_USE_BACKEND` | Render environment variable (defaults to `false`) |
 
 ## Frontend behaviour
