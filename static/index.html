@@ -10,6 +10,28 @@
     <link rel="stylesheet" href="/static/styles.css" />
   </head>
   <body>
+    <div
+      id="passcode-overlay"
+      class="passcode-overlay"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="passcode-title"
+    >
+      <div class="passcode-dialog">
+        <h2 id="passcode-title">Enter passcode</h2>
+        <p class="passcode-hint">This personal dashboard is locked. Enter the four-digit code to continue.</p>
+        <form id="passcode-form" class="passcode-form" autocomplete="off">
+          <div class="passcode-inputs">
+            <input class="passcode-input" type="password" inputmode="numeric" maxlength="1" pattern="[0-9]*" aria-label="First digit" />
+            <input class="passcode-input" type="password" inputmode="numeric" maxlength="1" pattern="[0-9]*" aria-label="Second digit" />
+            <input class="passcode-input" type="password" inputmode="numeric" maxlength="1" pattern="[0-9]*" aria-label="Third digit" />
+            <input class="passcode-input" type="password" inputmode="numeric" maxlength="1" pattern="[0-9]*" aria-label="Fourth digit" />
+          </div>
+          <button type="submit" class="btn btn--primary passcode-submit">Unlock</button>
+        </form>
+        <p id="passcode-error" class="passcode-error" role="status" aria-live="polite"></p>
+      </div>
+    </div>
     <div class="page">
       <header class="page__header">
         <div>

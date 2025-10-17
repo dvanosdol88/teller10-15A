@@ -1,9 +1,120 @@
 const STORE_KEY = 'teller:enrollment';
+const PASSCODE = '2123';
 const MAX_TRANSACTIONS = 10;
 
 const toastEl = document.getElementById('toast');
 
 let runtimeConfig = null;
+
+function waitForPasscodeUnlock() {
+  const overlay = document.getElementById('passcode-overlay');
+  const form = document.getElementById('passcode-form');
+  const errorEl = document.getElementById('passcode-error');
+  const inputs = Array.from(document.querySelectorAll('.passcode-input'));
+  if (!overlay || !form || inputs.length !== PASSCODE.length) {
+    return Promise.resolve();
+  }
+
+  const focusFirstEmpty = () => {
+    const target = inputs.find((input) => !input.value) || inputs[0];
+    target.focus();
+    target.select?.();
+  };
+
+  requestAnimationFrame(focusFirstEmpty);
+
+  const clearInputs = () => {
+    inputs.forEach((input) => {
+      input.value = '';
+    });
+  };
+
+  const submitForm = () => {
+    if (typeof form.requestSubmit === 'function') {
+      form.requestSubmit();
+    } else {
+      form.dispatchEvent(new Event('submit', { cancelable: true, bubbles: true }));
+    }
+  };
+
+  let unlocked = false;
+
+  return new Promise((resolve) => {
+    const unlock = () => {
+      if (unlocked) return;
+      unlocked = true;
+      overlay.classList.add('hidden');
+      overlay.setAttribute('aria-hidden', 'true');
+      overlay.removeAttribute('aria-modal');
+      errorEl.textContent = '';
+      clearInputs();
+      resolve();
+    };
+
+    inputs.forEach((input, index) => {
+      input.addEventListener('paste', (event) => {
+        const text = event.clipboardData?.getData('text') ?? '';
+        if (!text) return;
+        event.preventDefault();
+        const digits = text.replace(/\D/g, '').slice(0, PASSCODE.length);
+        inputs.forEach((el, idx) => {
+          el.value = digits[idx] ?? '';
+        });
+        errorEl.textContent = '';
+        const nextIndex = Math.min(digits.length, inputs.length - 1);
+        inputs[nextIndex].focus();
+        if (digits.length === inputs.length) {
+          submitForm();
+        }
+      });
+
+      input.addEventListener('input', (event) => {
+        const value = event.target.value.replace(/\D/g, '');
+        event.target.value = value.slice(-1);
+        if (event.target.value && index < inputs.length - 1) {
+          inputs[index + 1].focus();
+          inputs[index + 1].select?.();
+        }
+        errorEl.textContent = '';
+        if (inputs.every((el) => el.value)) {
+          submitForm();
+        }
+      });
+
+      input.addEventListener('keydown', (event) => {
+        if (event.key === 'Backspace' && !event.target.value && index > 0) {
+          inputs[index - 1].focus();
+          inputs[index - 1].value = '';
+          inputs[index - 1].select?.();
+          event.preventDefault();
+        }
+        if (event.key === 'ArrowLeft' && index > 0) {
+          inputs[index - 1].focus();
+          inputs[index - 1].select?.();
+          event.preventDefault();
+        }
+        if (event.key === 'ArrowRight' && index < inputs.length - 1) {
+          inputs[index + 1].focus();
+          inputs[index + 1].select?.();
+          event.preventDefault();
+        }
+      });
+    });
+
+    form.addEventListener('submit', (event) => {
+      event.preventDefault();
+      if (unlocked) return;
+      const attempt = inputs.map((input) => input.value || '').join('');
+      if (attempt === PASSCODE) {
+        unlock();
+      } else {
+        errorEl.textContent = 'Incorrect passcode. Please try again.';
+        clearInputs();
+        focusFirstEmpty();
+      }
+    });
+  });
+}
 
 async function fetchRuntimeConfig() {
   const response = await fetch('/api/config', { credentials: 'same-origin' });
@@ -181,7 +292,8 @@ class Dashboard {
           showToast('Unable to store enrollment. Please try again.', 'error');
         }
       },
-      onExit: ({ error }) => {
+      onExit: (data) => {
+        const error = data?.error;
         if (error) {
           console.error('Teller Connect error', error);
           showToast('Teller Connect exited with an error.', 'error');
@@ -379,6 +491,7 @@ class Dashboard {
 
 (async function bootstrap() {
   patchFetchForParams();
+  await waitForPasscodeUnlock();
   const connectBtn = document.getElementById('connect-btn');
   if (connectBtn) {
     connectBtn.setAttribute('disabled', 'true');

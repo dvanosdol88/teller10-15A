@@ -1,63 +1,46 @@
 # Teller Sample Application Hardening Plan
 
-## Overview
-This plan sequences the work required to move the Teller sample app toward a production-grade security posture. It
-pulls from the current implementation in `python/` and `static/`, and the constraints mentioned in the prior dialog
-(two trusted users, preference for simplicity, Render deployment). Each phase builds on the previous one so we can
-ship incremental improvements without destabilizing the app.
+## Context update (October 2024)
+The app now targets two trusted household users with no concurrent editing. That lets us trade deep enterprise
+controls for pragmatic safeguards that keep the dashboard stable, protect credentials from casual disclosure, and stay
+simple to operate on Render. The roadmap below preserves the wins already landed, highlights the lightweight measures
+that still matter, and tracks the heavier items as "stretch" improvements should the risk profile change later.
 
-## COMPLETED
-## Phase 1 – Stabilize runtime and secrets (Days 0‑3) 
-1. **Replace the development WSGI server.** Swap `wsgiref.simple_server` for Waitress so the app uses a production-ready
-   server while staying pure-Python and easy to operate on Render. (`python/teller.py` currently imports
-   `wsgiref.simple_server` in `main`.)
+## Baseline in place ✅
+- [x] **Production-ready HTTP server.** Waitress has replaced the development WSGI server so the app is safe to expose on
+  the public internet without manual babysitting.
+- [x] **Runtime configuration from the environment.** Teller identifiers and API URLs are loaded via environment
+  variables rather than compiled into the frontend bundle.
+- [x] **Read-only `/api/config`.** The frontend pulls runtime configuration at startup, so deployments can change values
+  without a rebuild.
+- [x] **Secrets live outside the repo.** Teller credentials and database DSNs are sourced from environment variables or
+  secret storage; nothing sensitive is committed.
+- [x] **PostgreSQL migration path.** Alembic migrations and configuration are ready for the managed database instance.
 
-## COMPLETED
-2. **Move hard-coded identifiers into configuration.** Load the Teller application ID, environment flag, and API base URL
-   from environment variables instead of embedding them in both backend arguments and the frontend bundle
-   (`python/teller.py` defaults the application ID; `static/index.js` hardcodes the same string).
-3. **Centralize config delivery to the client.** Expose a read-only `/api/config` endpoint backed by environment
-   variables so the frontend can request runtime configuration after authentication, eliminating exposed values in the
-   static assets.
-4. **Inventory secrets and key material.** Document every credential the app needs (Teller cert pair, database DSN,
-   Render-provided secrets). Ensure all are stored as Render environment variables or Secret Manager entries instead of
-   files under `./secrets`.
+## High-value, low-effort follow ups (Recommended)
+- [ ] **Lightweight access gate.** Keep the new 4-digit passcode gate active so casual visitors cannot read cached
+  financial data. (Complete once the overlay ships.)
+- [ ] **Schema validation on enrollments.** Use a small validation library (e.g., `marshmallow` or `pydantic`) to reject
+  malformed payloads. Even for two users, this closes off easy ways to corrupt stored enrollments.
+- [ ] **Tame client token exposure.** Remove the access token from `localStorage` and the status panel when practical;
+  storing it only in memory keeps the risk of shoulder surfing or saved browser state low without extra backend work.
+- [ ] **Friendly health probe and structured logs.** Emit a basic JSON line per request and expose `/api/healthz` for
+  Render monitoring. This improves operability without complex tooling.
 
-## COMPLETED
-## Phase 2 – Strengthen authentication & data handling (Days 3‑7)
-1. **Protect stored Teller access tokens.** Encrypt `models.User.access_token` before persisting and store the encryption
-   key in a managed secret store. Tokens are currently saved in plaintext (`python/models.py`).
-2. **Constrain enrollment payload processing.** Add schema validation for `/api/enrollments` and other endpoints to
-   reject malformed or unexpected fields early (`python/resources.py`).
-3. **Reduce client-side token exposure.** Stop writing the Teller access token to `localStorage` and avoid echoing it in
-   the UI status panel (`static/index.js`). Prefer short-lived, HttpOnly session cookies issued by the backend.
-4. **Implement rate limiting and abuse detection.** Apply middleware to throttle sensitive endpoints such as
-   `/api/connect/token` and live Teller calls.
+## Nice-to-have (Stretch goals if risk increases)
+- [ ] **Encrypt stored Teller access tokens.** Useful if the database ever lives outside the home network or the user
+  count grows beyond a couple of trusted people.
+- [ ] **Add rate limiting on sensitive endpoints.** Helps when deploying to the open internet, but can be deferred while
+  access is invitation-only.
+- [ ] **Security headers and TLS tuning.** Rely on Render's defaults for now; add explicit HSTS/CSP/X-Frame-Options only
+  if the app is embedded elsewhere.
+- [ ] **Dockerfile & full CI/CD hardening.** Keep this on the backlog until we need reproducible builds or automated
+  scanning.
+- [ ] **Backup/restore drills and incident runbooks.** Document lightweight manual procedures instead of formal playbooks
+  unless the deployment scope grows.
 
-## Phase 3 – Platform hardening & observability (Weeks 2‑3)
-1. **Introduce TLS termination and security headers.** Use Render's TLS termination plus Falcon middleware to add
-   headers like HSTS, CSP, and X-Frame-Options across the app.
-2. **Upgrade the database layer.** Migrate from SQLite to managed PostgreSQL, add Alembic migrations, and configure
-   SQLAlchemy connection pooling suitable for Waitress.
-3. **Add structured logging and tracing.** Emit JSON logs for API requests/responses and integrate with Render's log
-   drains or an external aggregator. Add health and readiness probes for deployment automation.
-
-## Phase 4 – Operational safeguards (Weeks 3‑4)
-1. **Containerize the service.** Provide a Dockerfile (multi-stage) for reproducible builds, pinned dependencies, and
-   vulnerability scanning.
-2. **Automate testing & security checks.** Enforce linting, type checks, unit tests, and SAST in CI. Include dependency
-   scanning (e.g., `pip-audit`) and container image scans in the pipeline.
-3. **Disaster recovery and access review.** Establish backup/restore procedures for the database and rotate Teller
-   credentials regularly. Document an incident response playbook covering Teller API failures and access revocation.
-
-## Recommended next step
-Begin Phase 1 by swapping the runtime to Waitress (add it to `requirements.txt` and update the entry point to launch
-with `waitress.serve`). This immediately removes the most fragile component in the stack and provides a stable base for
-subsequent hardening work.
-
-## Deployment milestone
-Deploy to Render once every Phase 1 task is complete: the app should already be running on Waitress, sourcing all
-runtime configuration from environment variables, and serving those values to the frontend through the new
-`/api/config` endpoint. At that point, secrets are centralized, no sensitive identifiers are baked into the static
-bundle, and the runtime surface is sufficiently hardened for a managed platform rollout. Subsequent phases can then be
-executed against the Render environment.
+## How to use this plan
+1. Focus on the "High-value" section until every checkbox is complete.
+2. Revisit the "Stretch goals" only if the threat model expands (more users, broader access, or regulatory pressure).
+3. Update this document whenever scope or requirements change so it continues to reflect deliberate, right-sized
+   safeguards rather than an aspirational wish list.
