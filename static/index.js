@@ -1,173 +1,69 @@
-window.FEATURE_USE_BACKEND = false;
-window.TEST_BEARER_TOKEN = undefined;
+const STORE_KEY = 'teller:enrollment';
+const MAX_TRANSACTIONS = 10;
 
+const toastEl = document.getElementById('toast');
 
-const BackendAdapter = (() => {
-  const state = {
-    apiBaseUrl: "/api",
-    bearerToken: undefined,
-  };
+let runtimeConfig = null;
 
-  function isBackendEnabled() {
-    return Boolean(window.FEATURE_USE_BACKEND);
-  }
-
-  async function loadConfig() {
-    try {
-      if (typeof location !== 'undefined' && location.protocol === 'file:') {
-        return { enabled: Boolean(window.FEATURE_USE_BACKEND), apiBaseUrl: state.apiBaseUrl };
-      }
-      const resp = await fetch('/api/config', { headers: { Accept: 'application/json' } });
-      if (resp && resp.ok) {
-        const cfg = await resp.json().catch(() => ({}));
-        if (cfg && typeof cfg.apiBaseUrl === 'string' && cfg.apiBaseUrl.trim()) {
-          state.apiBaseUrl = cfg.apiBaseUrl;
-        }
-        if (cfg && typeof cfg.FEATURE_USE_BACKEND === 'boolean') {
-          window.FEATURE_USE_BACKEND = cfg.FEATURE_USE_BACKEND;
-        }
-      }
-    } catch {}
-    return { enabled: Boolean(window.FEATURE_USE_BACKEND), apiBaseUrl: state.apiBaseUrl };
-  }
-
-  function headers() {
-    const h = { "Accept": "application/json" };
-    const token = window.TEST_BEARER_TOKEN || state.bearerToken;
-    if (token) h["Authorization"] = `Bearer ${token}`;
-    return h;
-  }
-
-  async function fetchAccounts() {
-    if (!isBackendEnabled()) return MOCK_ACCOUNTS;
-    try {
-      const resp = await fetch(`${state.apiBaseUrl}/db/accounts`, { headers: headers() });
-      if (!resp.ok) throw new Error("accounts failed");
-      const data = await resp.json();
-      return (data.accounts || []).map(a => ({
-        id: a.id, name: a.name, institution: a.institution, last_four: a.last_four, currency: a.currency
-      }));
-    } catch {
-      return MOCK_ACCOUNTS;
-    }
-  }
-
-  async function fetchCachedBalance(accountId) {
-    if (!isBackendEnabled()) return MOCK_BALANCES[accountId];
-    try {
-      const resp = await fetch(`${state.apiBaseUrl}/db/accounts/${encodeURIComponent(accountId)}/balances`, { headers: headers() });
-      if (!resp.ok) throw new Error("balance failed");
-      const data = await resp.json();
-      return { ...data.balance, cached_at: data.cached_at };
-    } catch {
-      return MOCK_BALANCES[accountId];
-    }
-  }
-
-  async function fetchCachedTransactions(accountId, limit = 10) {
-    if (!isBackendEnabled()) return (MOCK_TRANSACTIONS[accountId] || []);
-    try {
-      const url = `${state.apiBaseUrl}/db/accounts/${encodeURIComponent(accountId)}/transactions?limit=${limit}`;
-      const resp = await fetch(url, { headers: headers() });
-      if (!resp.ok) throw new Error("transactions failed");
-      const data = await resp.json();
-      return data.transactions || [];
-    } catch {
-      return (MOCK_TRANSACTIONS[accountId] || []);
-    }
-  }
-
-  async function refreshLive(accountId, count = 10) {
-    if (!isBackendEnabled()) return { balance: MOCK_BALANCES[accountId], transactions: (MOCK_TRANSACTIONS[accountId] || []) };
-    try {
-      const [bResp, tResp] = await Promise.all([
-        fetch(`${state.apiBaseUrl}/accounts/${encodeURIComponent(accountId)}/balances`, { headers: headers() }),
-        fetch(`${state.apiBaseUrl}/accounts/${encodeURIComponent(accountId)}/transactions?count=${count}`, { headers: headers() }),
-      ]);
-      if (!bResp.ok || !tResp.ok) throw new Error("live refresh failed");
-      const balance = await bResp.json();
-      const txsData = await tResp.json();
-      return { balance, transactions: txsData.transactions || [] };
-    } catch {
-      return { balance: MOCK_BALANCES[accountId], transactions: (MOCK_TRANSACTIONS[accountId] || []) };
-    }
-  }
-
-  async function fetchManualData(accountId) {
-    if (!isBackendEnabled()) return { account_id: accountId, rent_roll: null, updated_at: null };
-    try {
-      const resp = await fetch(`${state.apiBaseUrl}/db/accounts/${encodeURIComponent(accountId)}/manual-data`, { headers: headers() });
-      if (!resp.ok) return { account_id: accountId, rent_roll: null, updated_at: null };
-      return await resp.json();
-    } catch {
-      return { account_id: accountId, rent_roll: null, updated_at: null };
-    }
-  }
-
-  async function saveManualData(accountId, rentRoll) {
-    if (!isBackendEnabled()) throw new Error("Backend not enabled");
-    const resp = await fetch(`${state.apiBaseUrl}/db/accounts/${encodeURIComponent(accountId)}/manual-data`, {
-      method: 'PUT',
-      headers: { ...headers(), 'Content-Type': 'application/json' },
-      body: JSON.stringify({ rent_roll: rentRoll })
-    });
-    if (!resp.ok) {
-      const err = await resp.json().catch(() => ({ description: 'Failed to save' }));
-      throw new Error(err.description || 'Failed to save');
-    }
-    return await resp.json();
-  }
-
-  return { loadConfig, isBackendEnabled, fetchAccounts, fetchCachedBalance, fetchCachedTransactions, refreshLive, fetchManualData, saveManualData };
-})();
-const MOCK_ACCOUNTS = [
-  { id: 'acc_checking', name: 'Checking', institution: 'Demo Bank', last_four: '1234', currency: 'USD' },
-  { id: 'acc_savings', name: 'Savings', institution: 'Demo Bank', last_four: '9876', currency: 'USD' }
-];
-
-const MOCK_BALANCES = {
-  acc_checking: { available: 1250.25, ledger: 1300.25, currency: 'USD', cached_at: new Date().toISOString() },
-  acc_savings: { available: 8200.00, ledger: 8200.00, currency: 'USD', cached_at: new Date().toISOString() }
-};
-
-const MOCK_TRANSACTIONS = {
-  acc_checking: [
-    { description: 'Coffee Shop', amount: -3.75, date: '2025-10-08' },
-    { description: 'Payroll', amount: 2500.00, date: '2025-10-01' },
-  ],
-  acc_savings: []
-};
-
-function showToast(message) {
-  const el = document.getElementById('toast');
-  el.textContent = message || '';
-  el.classList.remove('hidden');
-  window.clearTimeout(showToast._t);
-  showToast._t = window.setTimeout(() => el.classList.add('hidden'), 2200);
-}
-
-function formatCurrency(value, currency = 'USD') {
-  if (value == null || Number.isNaN(Number(value))) return '—';
+async function fetchRuntimeConfig() {
   try {
-    return new Intl.NumberFormat(undefined, { style: 'currency', currency }).format(Number(value));
+    if (typeof location !== 'undefined' && location.protocol === 'file:') {
+      return { enabled: false, apiBaseUrl: '/api' };
+    }
+    const resp = await fetch('/api/config', { headers: { Accept: 'application/json' } });
+    if (resp && resp.ok) {
+      const cfg = await resp.json().catch(() => ({}));
+      const applicationId = typeof cfg.applicationId === 'string' ? cfg.applicationId.trim() : '';
+      const environment = typeof cfg.environment === 'string' ? cfg.environment : 'development';
+      const apiBaseUrl = typeof cfg.apiBaseUrl === 'string' && cfg.apiBaseUrl ? cfg.apiBaseUrl : '/api';
+      if (!applicationId) {
+        throw new Error('Runtime configuration is missing applicationId.');
+      }
+      runtimeConfig = { applicationId, environment, apiBaseUrl };
+      window.__tellerRuntimeConfig = runtimeConfig;
+      return runtimeConfig;
+    }
+  } catch (error) {
+    console.warn('Failed to load runtime config, will use mock data', error);
+  }
+  return null;
+}
+
+function showToast(message, variant = 'info') {
+  if (!toastEl) return;
+  toastEl.textContent = message;
+  toastEl.dataset.variant = variant;
+  toastEl.classList.remove('hidden');
+  clearTimeout(showToast._timer);
+  showToast._timer = setTimeout(() => {
+    toastEl.classList.add('hidden');
+  }, 3200);
+}
+
+function setHidden(el, hidden) {
+  if (!el) return;
+  el.classList.toggle('hidden', hidden);
+}
+
+function formatCurrency(amount, currency = 'USD') {
+  if (amount === null || amount === undefined || Number.isNaN(Number(amount))) {
+    return '—';
+  }
+  try {
+    return new Intl.NumberFormat(undefined, { style: 'currency', currency }).format(Number(amount));
   } catch {
-    return `${value}`;
+    return `${amount}`;
   }
 }
 
-function formatAmount(value, currency = 'USD') {
-  const s = formatCurrency(value, currency);
-  if (typeof value === 'number' && value < 0) return s;
-  return s;
-}
-
-function formatTimestamp(ts) {
-  if (!ts) return '—';
+function formatTimestamp(value) {
+  if (!value) return '—';
   try {
-    const d = new Date(ts);
-    return d.toLocaleString();
+    const date = typeof value === 'string' ? new Date(value) : value;
+    if (Number.isNaN(date.getTime())) return '—';
+    return date.toLocaleString();
   } catch {
-    return `${ts}`;
+    return '—';
   }
 }
 
@@ -191,106 +87,381 @@ function formatTimeAgo(ts) {
   }
 }
 
-async function renderCard(account) {
-  const template = document.getElementById('account-card-template');
-  const node = template.content.firstElementChild.cloneNode(true);
-  node.dataset.accountId = account.id;
-
-  node.querySelectorAll('.flip-btn').forEach(btn => {
-    btn.addEventListener('click', () => node.classList.toggle('is-flipped'));
-  });
-
-  node.querySelectorAll('.account-name').forEach(el => el.textContent = account.name || 'Account');
-  const subtitle = [account.institution, account.last_four ? `•••• ${account.last_four}` : null].filter(Boolean).join(' · ');
-  node.querySelectorAll('.account-subtitle').forEach(el => el.textContent = subtitle);
-
-  const bal = await BackendAdapter.fetchCachedBalance(account.id);
-  node.querySelector('.balance-available').textContent = formatCurrency(bal.available, account.currency);
-  node.querySelector('.balance-ledger').textContent = formatCurrency(bal.ledger, account.currency);
-  node.querySelector('.balance-cached').textContent = `Cached: ${formatTimestamp(bal.cached_at)}`;
-
-  const list = node.querySelector('.transactions-list');
-  list.innerHTML = '';
-  const txs = await BackendAdapter.fetchCachedTransactions(account.id, 10);
-  if (!txs.length) {
-    node.querySelector('.transactions-empty').classList.remove('hidden');
-  } else {
-    node.querySelector('.transactions-empty').classList.add('hidden');
-    txs.forEach(tx => {
-      const li = document.createElement('li');
-      const details = document.createElement('div');
-      details.className = 'details';
-      const description = document.createElement('span');
-      description.className = 'description';
-      description.textContent = tx.description || 'Transaction';
-      const date = document.createElement('span');
-      date.className = 'date';
-      date.textContent = tx.date ? new Date(tx.date).toLocaleDateString() : '';
-      details.append(description, date);
-      const amount = document.createElement('span');
-      amount.className = 'amount';
-      amount.textContent = formatAmount(tx.amount, account.currency);
-      li.append(details, amount);
-      list.appendChild(li);
-    });
-  }
-  node.querySelector('.transactions-cached').textContent = `Cached: ${formatTimestamp(bal.cached_at)}`;
-
-  const refreshBtn = node.querySelector('.refresh-btn');
-  refreshBtn.addEventListener('click', () => showToast('Demo: no live refresh in visual-only mode'));
-
-  const toggleBtns = node.querySelectorAll('.toggle-btn');
-  const viewPanels = node.querySelectorAll('.view-panel');
-  toggleBtns.forEach(btn => {
-    btn.addEventListener('click', () => {
-      const targetView = btn.dataset.view;
-      toggleBtns.forEach(b => b.classList.toggle('active', b.dataset.view === targetView));
-      viewPanels.forEach(panel => {
-        if (panel.classList.contains(targetView)) {
-          panel.classList.add('active');
-        } else {
-          panel.classList.remove('active');
-        }
-      });
-    });
-  });
-
-  const manualData = await BackendAdapter.fetchManualData(account.id);
-  const rentRollValue = node.querySelector('.rent-roll-value');
-  const manualDataUpdated = node.querySelector('.manual-data-updated');
-  
-  if (manualData.rent_roll !== null) {
-    rentRollValue.textContent = formatCurrency(manualData.rent_roll, account.currency);
-  } else {
-    rentRollValue.textContent = '—';
-  }
-  
-  if (manualData.updated_at) {
-    manualDataUpdated.textContent = `Last updated: ${formatTimeAgo(manualData.updated_at)}`;
-  } else {
-    manualDataUpdated.textContent = '—';
-  }
-
-  const editBtn = node.querySelector('.edit-manual-data-btn');
-  editBtn.addEventListener('click', () => openManualDataModal(account.id, manualData.rent_roll, account.currency));
-
-  return node;
+function formatAmount(amount, currency = 'USD') {
+  if (amount === null || amount === undefined) return '—';
+  const formatted = formatCurrency(Math.abs(Number(amount)), currency);
+  return Number(amount) >= 0 ? `+${formatted}` : `-${formatted}`;
 }
 
-async function init() {
-  const grid = document.getElementById('accounts-grid');
-  const empty = document.getElementById('empty-state');
-  grid.innerHTML = '';
-
-  const accounts = await BackendAdapter.fetchAccounts();
-  if (!accounts.length) {
-    empty.classList.remove('hidden');
-    return;
+function getStoredEnrollment() {
+  const raw = localStorage.getItem(STORE_KEY);
+  if (!raw) return null;
+  try {
+    return JSON.parse(raw);
+  } catch (error) {
+    console.warn('Failed to parse stored enrollment', error);
+    return null;
   }
-  empty.classList.add('hidden');
-  for (const acc of accounts) {
-    const card = await renderCard(acc);
-    grid.appendChild(card);
+}
+
+function storeEnrollment(enrollment) {
+  localStorage.setItem(STORE_KEY, JSON.stringify(enrollment));
+}
+
+function clearEnrollment() {
+  localStorage.removeItem(STORE_KEY);
+}
+
+async function apiRequest(path, { method = 'GET', body, headers = {}, params } = {}) {
+  const token = window.__tellerAccessToken;
+  if (!token) throw new Error('Missing access token');
+  const baseUrl = runtimeConfig?.apiBaseUrl || '/api';
+  const finalHeaders = {
+    Authorization: `Bearer ${token}`,
+    ...headers,
+  };
+  const options = { method, headers: finalHeaders };
+  if (body !== undefined) {
+    options.body = typeof body === 'string' ? body : JSON.stringify(body);
+    if (!('Content-Type' in finalHeaders)) {
+      options.headers['Content-Type'] = 'application/json';
+    }
+  }
+  if (params) { options.params = params; }
+  const response = await fetch(`${baseUrl}${path}`, options);
+  if (!response.ok) {
+    let payload;
+    try {
+      payload = await response.json();
+    } catch {
+      payload = await response.text();
+    }
+    const error = new Error(`Request failed: ${response.status}`);
+    error.payload = payload;
+    error.status = response.status;
+    throw error;
+  }
+  if (response.status === 204) return null;
+  const contentType = response.headers.get('content-type') || '';
+  if (contentType.includes('application/json')) {
+    return response.json();
+  }
+  return response.text();
+}
+
+const MOCK_ACCOUNTS = [
+  { id: 'acc_checking', name: 'Checking', institution: 'Demo Bank', last_four: '1234', currency: 'USD' },
+  { id: 'acc_savings', name: 'Savings', institution: 'Demo Bank', last_four: '9876', currency: 'USD' }
+];
+
+const MOCK_BALANCES = {
+  acc_checking: { available: 1250.25, ledger: 1300.25, currency: 'USD', cached_at: new Date().toISOString() },
+  acc_savings: { available: 8200.00, ledger: 8200.00, currency: 'USD', cached_at: new Date().toISOString() }
+};
+
+const MOCK_TRANSACTIONS = {
+  acc_checking: [
+    { description: 'Coffee Shop', amount: -3.75, date: '2025-10-08' },
+    { description: 'Payroll', amount: 2500.00, date: '2025-10-01' },
+  ],
+  acc_savings: []
+};
+
+class Dashboard {
+  constructor(config) {
+    this.config = config;
+    this.grid = document.getElementById('accounts-grid');
+    this.emptyState = document.getElementById('empty-state');
+    this.statusEnvironment = document.getElementById('env-value');
+    this.statusUser = document.getElementById('user-value');
+    this.statusToken = document.getElementById('token-value');
+    this.template = document.getElementById('account-card-template');
+    this.cards = new Map();
+  }
+
+  init() {
+    if (this.statusEnvironment) {
+      this.statusEnvironment.textContent = this.config?.environment || 'development';
+    }
+    const enrollment = getStoredEnrollment();
+    if (enrollment?.accessToken) {
+      this.onConnected(enrollment);
+      this.bootstrap();
+    } else {
+      setHidden(this.emptyState, false);
+    }
+    this.setupConnect();
+  }
+
+  setupConnect() {
+    const connectBtn = document.getElementById('connect-btn');
+    const disconnectBtn = document.getElementById('disconnect-btn');
+    
+    if (!this.config || !this.config.applicationId) {
+      console.warn('No runtime configuration available, using mock data mode');
+      connectBtn?.setAttribute('disabled', 'true');
+      return;
+    }
+
+    const { applicationId, environment } = this.config;
+    if (!applicationId || !environment) {
+      console.error('Runtime configuration is missing required Teller Connect values.');
+      connectBtn?.setAttribute('disabled', 'true');
+      return;
+    }
+
+    const connector = window.TellerConnect.setup({
+      applicationId,
+      environment,
+      institution: 'td_bank',
+      onSuccess: async (enrollment) => {
+        try {
+          window.__tellerAccessToken = enrollment.accessToken;
+          storeEnrollment(enrollment);
+          this.onConnected(enrollment);
+
+          const enrollmentResponse = await apiRequest('/enrollments', {
+            method: 'POST',
+            body: { enrollment },
+          });
+
+          this.renderAccounts(enrollmentResponse?.accounts ?? []);
+          
+          showToast('Enrollment saved and cache primed.');
+        } catch (error) {
+          console.error(error);
+          showToast('Unable to store enrollment. Please try again.', 'error');
+        }
+      },
+      onExit: () => {
+        console.log('Teller Connect widget closed');
+        showToast('Connection cancelled');
+      },
+    });
+
+    connectBtn?.removeAttribute('disabled');
+    connectBtn?.addEventListener('click', () => connector.open());
+    disconnectBtn?.addEventListener('click', () => {
+      clearEnrollment();
+      window.__tellerAccessToken = undefined;
+      this.reset();
+      if (this.statusEnvironment) {
+        this.statusEnvironment.textContent = this.config.environment;
+      }
+      setHidden(this.emptyState, false);
+      connectBtn?.focus();
+      if (disconnectBtn) disconnectBtn.hidden = true;
+      showToast('Disconnected. Connect again to load data.');
+    });
+  }
+
+  async bootstrap() {
+    try {
+      const data = await apiRequest('/db/accounts');
+      this.renderAccounts(data?.accounts ?? []);
+    } catch (error) {
+      if (error.status === 401) {
+        this.reset();
+        clearEnrollment();
+        showToast('Session expired. Please reconnect.', 'error');
+      } else {
+        console.error('Failed to load accounts', error);
+        showToast('Unable to load cached accounts.', 'error');
+      }
+    }
+  }
+
+  renderAccounts(accounts) {
+    if (this.grid) {
+      this.grid.innerHTML = '';
+    }
+    this.cards.clear();
+
+    if (!accounts || accounts.length === 0) {
+      setHidden(this.emptyState, false);
+      return;
+    }
+
+    setHidden(this.emptyState, true);
+    accounts.forEach((account) => this.renderCard(account));
+  }
+  
+  onConnected(enrollment) {
+    window.__tellerAccessToken = enrollment.accessToken;
+    if (this.statusUser) {
+      this.statusUser.textContent = enrollment.user?.id ?? 'Connected';
+    }
+    if (this.statusToken) {
+      this.statusToken.textContent = enrollment.accessToken ?? '—';
+    }
+    if (this.statusEnvironment) {
+      this.statusEnvironment.textContent = this.config?.environment || 'development';
+    }
+    const disconnect = document.getElementById('disconnect-btn');
+    if (disconnect) disconnect.hidden = false;
+    setHidden(this.emptyState, true);
+  }
+
+  reset() {
+    if (this.statusUser) {
+      this.statusUser.textContent = '—';
+    }
+    if (this.statusToken) {
+      this.statusToken.textContent = '—';
+    }
+    if (this.grid) {
+      this.grid.innerHTML = '';
+    }
+    this.cards.clear();
+  }
+
+  renderCard(account) {
+    if (!this.template) return;
+    const node = this.template.content.firstElementChild.cloneNode(true);
+    node.dataset.accountId = account.id;
+
+    const flipButtons = node.querySelectorAll('.flip-btn');
+    flipButtons.forEach((btn) => {
+      btn.addEventListener('click', () => {
+        node.classList.toggle('is-flipped');
+      });
+    });
+
+    const refreshBtn = node.querySelector('.refresh-btn');
+    refreshBtn.addEventListener('click', async () => {
+      try {
+        refreshBtn.disabled = true;
+        refreshBtn.textContent = 'Refreshing…';
+        await Promise.all([
+          apiRequest(`/accounts/${account.id}/balances`),
+          apiRequest(`/accounts/${account.id}/transactions`, { params: { count: MAX_TRANSACTIONS } }),
+        ]);
+        await this.populateCard(account.id);
+        showToast('Live data cached.');
+      } catch (error) {
+        console.error('Refresh failed', error);
+        if (error.status === 401) {
+          clearEnrollment();
+          this.reset();
+          showToast('Session expired. Please reconnect.', 'error');
+        } else {
+          showToast('Unable to refresh account.', 'error');
+        }
+      } finally {
+        refreshBtn.disabled = false;
+        refreshBtn.textContent = 'Refresh';
+      }
+    });
+
+    const toggleBtns = node.querySelectorAll('.toggle-btn');
+    const viewPanels = node.querySelectorAll('.view-panel');
+    toggleBtns.forEach(btn => {
+      btn.addEventListener('click', () => {
+        const targetView = btn.dataset.view;
+        toggleBtns.forEach(b => b.classList.toggle('active', b.dataset.view === targetView));
+        viewPanels.forEach(panel => {
+          if (panel.classList.contains(targetView)) {
+            panel.classList.add('active');
+          } else {
+            panel.classList.remove('active');
+          }
+        });
+      });
+    });
+
+    if (this.grid) {
+      this.grid.appendChild(node);
+    }
+    this.cards.set(account.id, node);
+    this.populateCard(account.id, account);
+  }
+
+  async populateCard(accountId, accountSummary) {
+    const card = this.cards.get(accountId);
+    if (!card) return;
+    const currency = accountSummary?.currency ?? 'USD';
+    
+    const nameEls = card.querySelectorAll('.account-name');
+    nameEls.forEach((el) => (el.textContent = accountSummary?.name ?? 'Account'));
+    const subtitle = [accountSummary?.institution, accountSummary?.last_four ? `•••• ${accountSummary.last_four}` : null]
+      .filter(Boolean)
+      .join(' · ');
+    card.querySelectorAll('.account-subtitle').forEach((el) => (el.textContent = subtitle));
+
+    try {
+      const balance = await apiRequest(`/db/accounts/${accountId}/balances`);
+      const balanceData = balance?.balance ?? {};
+      const cachedAt = balance?.cached_at ?? null;
+      card.querySelector('.balance-available').textContent = formatCurrency(balanceData.available, currency);
+      card.querySelector('.balance-ledger').textContent = formatCurrency(balanceData.ledger, currency);
+      card.querySelector('.balance-cached').textContent = `Cached: ${formatTimestamp(cachedAt)}`;
+    } catch (error) {
+      console.warn('No cached balance yet', error);
+      card.querySelector('.balance-cached').textContent = 'Cached: Never';
+    }
+
+    try {
+      const transactions = await apiRequest(`/db/accounts/${accountId}/transactions`, {
+        params: { limit: MAX_TRANSACTIONS },
+      });
+      const list = card.querySelector('.transactions-list');
+      list.innerHTML = '';
+      const txs = transactions?.transactions ?? [];
+      if (!txs.length) {
+        setHidden(card.querySelector('.transactions-empty'), false);
+      } else {
+        setHidden(card.querySelector('.transactions-empty'), true);
+        txs.forEach((tx) => {
+          const li = document.createElement('li');
+          const details = document.createElement('div');
+          details.className = 'details';
+          const description = document.createElement('span');
+          description.className = 'description';
+          description.textContent = tx.description || 'Transaction';
+          const date = document.createElement('span');
+          date.className = 'date';
+          date.textContent = tx.date ? new Date(tx.date).toLocaleDateString() : '';
+          details.append(description, date);
+          const amount = document.createElement('span');
+          amount.className = 'amount';
+          amount.textContent = formatAmount(tx.amount, currency);
+          li.append(details, amount);
+          list.appendChild(li);
+        });
+      }
+      const cached = transactions?.cached_at ? formatTimestamp(transactions.cached_at) : 'Never';
+      card.querySelector('.transactions-cached').textContent = `Cached: ${cached}`;
+    } catch (error) {
+      console.warn('No cached transactions yet', error);
+      const empty = card.querySelector('.transactions-empty');
+      empty.textContent = 'Unable to load transactions.';
+      setHidden(empty, false);
+    }
+
+    try {
+      const manualData = await apiRequest(`/db/accounts/${accountId}/manual-data`);
+      const rentRollValue = card.querySelector('.rent-roll-value');
+      const manualDataUpdated = card.querySelector('.manual-data-updated');
+      
+      if (manualData.rent_roll !== null && manualData.rent_roll !== undefined) {
+        rentRollValue.textContent = formatCurrency(manualData.rent_roll, currency);
+      } else {
+        rentRollValue.textContent = '—';
+      }
+      
+      if (manualData.updated_at) {
+        manualDataUpdated.textContent = `Last updated: ${formatTimeAgo(manualData.updated_at)}`;
+      } else {
+        manualDataUpdated.textContent = '—';
+      }
+
+      const editBtn = card.querySelector('.edit-manual-data-btn');
+      if (editBtn) {
+        editBtn.addEventListener('click', () => openManualDataModal(accountId, manualData.rent_roll, currency));
+      }
+    } catch (error) {
+      console.warn('No manual data available', error);
+    }
   }
 }
 
@@ -315,12 +486,15 @@ function openManualDataModal(accountId, currentValue, currency) {
     saveBtn.disabled = true;
     saveBtn.textContent = 'Saving...';
     try {
-      await BackendAdapter.saveManualData(accountId, valueToSave);
+      await apiRequest(`/db/accounts/${accountId}/manual-data`, {
+        method: 'PUT',
+        body: { rent_roll: valueToSave }
+      });
       showToast('Manual data saved successfully');
       close();
-      await init();
+      window.location.reload();
     } catch (err) {
-      showToast(err.message || 'Failed to save');
+      showToast(err.message || 'Failed to save', 'error');
       saveBtn.disabled = false;
       saveBtn.textContent = 'Save';
     }
@@ -357,14 +531,43 @@ function openManualDataModal(accountId, currentValue, currency) {
   });
 }
 
-async function boot() {
-  try {
-    await BackendAdapter.loadConfig();
-  } catch {}
-  if (document.readyState !== 'loading') {
-    init();
-  } else {
-    document.addEventListener('DOMContentLoaded', init);
+(async function bootstrap() {
+  patchFetchForParams();
+  const connectBtn = document.getElementById('connect-btn');
+  if (connectBtn) {
+    connectBtn.setAttribute('disabled', 'true');
   }
+  try {
+    const config = await fetchRuntimeConfig();
+    if (config) {
+      const dashboard = new Dashboard(config);
+      dashboard.init();
+    } else {
+      console.log('Running in visual-only mode with mock data');
+      if (connectBtn) {
+        connectBtn.textContent = 'Connect (disabled in visual mode)';
+      }
+      setHidden(document.getElementById('empty-state'), false);
+    }
+  } catch (error) {
+    console.error('Failed to bootstrap dashboard', error);
+    showToast('Unable to load configuration. Please try again later.', 'error');
+  }
+})();
+
+function patchFetchForParams() {
+  const originalFetch = window.fetch;
+  window.fetch = (input, init = {}) => {
+    if (init && init.params) {
+      const url = new URL(typeof input === 'string' ? input : input.url, window.location.origin);
+      Object.entries(init.params).forEach(([key, value]) => {
+        if (value !== undefined && value !== null) {
+          url.searchParams.set(key, value);
+        }
+      });
+      delete init.params;
+      return originalFetch(url.toString(), init);
+    }
+    return originalFetch(input, init);
+  };
 }
-boot();
