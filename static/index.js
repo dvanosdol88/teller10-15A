@@ -10,14 +10,17 @@ function waitForPasscodeUnlock() {
   const form = document.getElementById('passcode-form');
   const errorEl = document.getElementById('passcode-error');
   const inputs = Array.from(document.querySelectorAll('.passcode-input'));
+  const page = document.querySelector('.page');
 
   if (!overlay || !form || inputs.length !== PASSCODE.length) {
     console.warn('Passcode overlay is unavailable; continuing without lock screen.');
     document.body?.classList.remove('passcode-locked');
+    page?.removeAttribute('inert');
     return Promise.resolve();
   }
 
   document.body?.classList.add('passcode-locked');
+  page?.setAttribute('inert', '');
   overlay.classList.remove('hidden');
   overlay.removeAttribute('aria-hidden');
   overlay.setAttribute('aria-modal', 'true');
@@ -51,6 +54,7 @@ function waitForPasscodeUnlock() {
       if (unlocked) return;
       unlocked = true;
       document.body?.classList.remove('passcode-locked');
+      page?.removeAttribute('inert');
       overlay.classList.add('hidden');
       overlay.setAttribute('aria-hidden', 'true');
       overlay.removeAttribute('aria-modal');
