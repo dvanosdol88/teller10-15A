@@ -1,9 +1,214 @@
 const STORE_KEY = 'teller:enrollment';
+const PASSCODE = '2123';
 const MAX_TRANSACTIONS = 10;
+const PASSCODE_DIGIT_LABELS = ['First', 'Second', 'Third', 'Fourth', 'Fifth', 'Sixth'];
 
 const toastEl = document.getElementById('toast');
 
 let runtimeConfig = null;
+
+function createPasscodeOverlay() {
+  if (!document.body) return {};
+
+  const overlay = document.createElement('div');
+  overlay.id = 'passcode-overlay';
+  overlay.className = 'passcode-overlay';
+  overlay.setAttribute('role', 'dialog');
+  overlay.setAttribute('aria-modal', 'true');
+  overlay.setAttribute('aria-labelledby', 'passcode-title');
+
+  const dialog = document.createElement('div');
+  dialog.className = 'passcode-dialog';
+
+  const title = document.createElement('h2');
+  title.id = 'passcode-title';
+  title.textContent = 'Enter passcode';
+
+  const hint = document.createElement('p');
+  hint.className = 'passcode-hint';
+  const digitDescription = PASSCODE.length === 1 ? 'digit' : `${PASSCODE.length}-digit code`;
+  hint.textContent = `This personal dashboard is locked. Enter the ${digitDescription} to continue.`;
+
+  const form = document.createElement('form');
+  form.id = 'passcode-form';
+  form.className = 'passcode-form';
+  form.setAttribute('autocomplete', 'off');
+
+  const inputsWrapper = document.createElement('div');
+  inputsWrapper.className = 'passcode-inputs';
+
+  for (let index = 0; index < PASSCODE.length; index += 1) {
+    const input = document.createElement('input');
+    input.className = 'passcode-input';
+    input.type = 'password';
+    input.inputMode = 'numeric';
+    input.maxLength = 1;
+    input.pattern = '[0-9]*';
+    const label = PASSCODE_DIGIT_LABELS[index] ?? `Digit ${index + 1}`;
+    input.setAttribute('aria-label', `${label} digit`);
+    inputsWrapper.appendChild(input);
+  }
+
+  const submit = document.createElement('button');
+  submit.type = 'submit';
+  submit.className = 'btn btn--primary passcode-submit';
+  submit.textContent = 'Unlock';
+
+  form.append(inputsWrapper, submit);
+
+  const error = document.createElement('p');
+  error.id = 'passcode-error';
+  error.className = 'passcode-error';
+  error.setAttribute('role', 'status');
+  error.setAttribute('aria-live', 'polite');
+
+  dialog.append(title, hint, form, error);
+  overlay.appendChild(dialog);
+  document.body.prepend(overlay);
+  document.body.classList.add('passcode-locked');
+
+  return {
+    overlay,
+    form,
+    errorEl: error,
+    inputs: Array.from(inputsWrapper.querySelectorAll('.passcode-input')),
+  };
+}
+
+function waitForPasscodeUnlock() {
+  let overlay = document.getElementById('passcode-overlay');
+  let form = document.getElementById('passcode-form');
+  let errorEl = document.getElementById('passcode-error');
+  let inputs = Array.from(document.querySelectorAll('.passcode-input'));
+
+  if (!overlay || !form || inputs.length !== PASSCODE.length) {
+    const created = createPasscodeOverlay();
+    overlay = created.overlay ?? overlay;
+    form = created.form ?? form;
+    errorEl = created.errorEl ?? errorEl;
+    inputs = created.inputs ?? inputs;
+  }
+
+  if (!overlay || !form || inputs.length !== PASSCODE.length) {
+    console.warn('Passcode overlay is unavailable; continuing without lock screen.');
+    document.body?.classList.remove('passcode-locked');
+    return Promise.resolve();
+  }
+
+  document.body?.classList.add('passcode-locked');
+  overlay.classList.remove('hidden');
+  overlay.removeAttribute('aria-hidden');
+  overlay.setAttribute('aria-modal', 'true');
+
+  const focusFirstEmpty = () => {
+    const target = inputs.find((input) => !input.value) || inputs[0];
+    target.focus();
+    target.select?.();
+  };
+
+  requestAnimationFrame(focusFirstEmpty);
+
+  const clearInputs = () => {
+    inputs.forEach((input) => {
+      input.value = '';
+    });
+  };
+
+  const submitForm = () => {
+    if (typeof form.requestSubmit === 'function') {
+      form.requestSubmit();
+    } else {
+      form.dispatchEvent(new Event('submit', { cancelable: true, bubbles: true }));
+    }
+  };
+
+  let unlocked = false;
+
+  return new Promise((resolve) => {
+    const unlock = () => {
+      if (unlocked) return;
+      unlocked = true;
+      document.body?.classList.remove('passcode-locked');
+      overlay.classList.add('hidden');
+      overlay.setAttribute('aria-hidden', 'true');
+      overlay.removeAttribute('aria-modal');
+      if (errorEl) {
+        errorEl.textContent = '';
+      }
+      clearInputs();
+      resolve();
+    };
+
+    inputs.forEach((input, index) => {
+      input.addEventListener('paste', (event) => {
+        const text = event.clipboardData?.getData('text') ?? '';
+        if (!text) return;
+        event.preventDefault();
+        const digits = text.replace(/\D/g, '').slice(0, PASSCODE.length);
+        inputs.forEach((el, idx) => {
+          el.value = digits[idx] ?? '';
+        });
+        if (errorEl) {
+          errorEl.textContent = '';
+        }
+        const nextIndex = Math.min(digits.length, inputs.length - 1);
+        inputs[nextIndex].focus();
+        if (digits.length === inputs.length) {
+          submitForm();
+        }
+      });
+
+      input.addEventListener('input', (event) => {
+        const value = event.target.value.replace(/\D/g, '');
+        event.target.value = value.slice(-1);
+        if (event.target.value && index < inputs.length - 1) {
+          inputs[index + 1].focus();
+          inputs[index + 1].select?.();
+        }
+        if (errorEl) {
+          errorEl.textContent = '';
+        }
+        if (inputs.every((el) => el.value)) {
+          submitForm();
+        }
+      });
+
+      input.addEventListener('keydown', (event) => {
+        if (event.key === 'Backspace' && !event.target.value && index > 0) {
+          inputs[index - 1].focus();
+          inputs[index - 1].value = '';
+          inputs[index - 1].select?.();
+          event.preventDefault();
+        }
+        if (event.key === 'ArrowLeft' && index > 0) {
+          inputs[index - 1].focus();
+          inputs[index - 1].select?.();
+          event.preventDefault();
+        }
+        if (event.key === 'ArrowRight' && index < inputs.length - 1) {
+          inputs[index + 1].focus();
+          inputs[index + 1].select?.();
+          event.preventDefault();
+        }
+      });
+    });
+
+    form.addEventListener('submit', (event) => {
+      event.preventDefault();
+      if (unlocked) return;
+      const attempt = inputs.map((input) => input.value || '').join('');
+      if (attempt === PASSCODE) {
+        unlock();
+      } else {
+        if (errorEl) {
+          errorEl.textContent = 'Incorrect passcode. Please try again.';
+        }
+        clearInputs();
+        focusFirstEmpty();
+      }
+    });
+  });
+}
 
 async function fetchRuntimeConfig() {
   const response = await fetch('/api/config', { credentials: 'same-origin' });
@@ -181,7 +386,8 @@ class Dashboard {
           showToast('Unable to store enrollment. Please try again.', 'error');
         }
       },
-      onExit: ({ error }) => {
+      onExit: (data) => {
+        const error = data?.error;
         if (error) {
           console.error('Teller Connect error', error);
           showToast('Teller Connect exited with an error.', 'error');
@@ -379,6 +585,7 @@ class Dashboard {
 
 (async function bootstrap() {
   patchFetchForParams();
+  await waitForPasscodeUnlock();
   const connectBtn = document.getElementById('connect-btn');
   if (connectBtn) {
     connectBtn.setAttribute('disabled', 'true');
