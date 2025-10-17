@@ -80,7 +80,7 @@ All credentials must be provisioned via environment variables or Secret Manager 
 
 ## Frontend behaviour
 
-- Teller Connect launches from the “Connect an account” button. On success the enrollment is posted to `/api/enrollments`, cached in the database, and persisted to `localStorage`.
+- Teller Connect launches from the “Connect an account” button. On success the enrollment is posted to `/api/enrollments`, cached in the database, and the access token is retained only in memory for the active session.
 - Cards fetch cached balances (`/api/db/accounts/{id}/balances`) and cached transactions (`/api/db/accounts/{id}/transactions?limit=10`).
 - “Refresh live” calls both `/api/accounts/{id}/balances` and `/api/accounts/{id}/transactions?count=10`, then re-renders the cached data.
 - Static assets are cached by the browser, while all API responses set `Cache-Control: no-store`.
