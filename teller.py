@@ -51,6 +51,17 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+@app.get("/")
+def root():
+    """Unauthenticated root for uptime checks."""
+    cfg = dict(BASE_CONFIG)
+    return JSONResponse({
+        "ok": True,
+        "service": "teller10-15a",
+        "backendMode": compute_backend_mode(cfg),
+        "authRequired": REQUIRE_AUTH
+    })
+
 @app.get("/api/healthz")
 def healthz():
     try:
@@ -111,4 +122,3 @@ if __name__ == "__main__":
     import uvicorn
     port = int(os.getenv("PORT", "3001"))
     uvicorn.run(app, host="0.0.0.0", port=port)
-
